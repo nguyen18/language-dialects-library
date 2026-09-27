@@ -14,6 +14,7 @@ import { fileURLToPath } from 'node:url'
 import {
   normalizeEnglish,
   shardKey,
+  toStored,
   type EnglishShard,
   type Entry,
   type Hit,
@@ -74,11 +75,13 @@ async function readEntries(file: string, config: LanguageConfig): Promise<Entry[
       const glosses = (s.glosses ?? []).filter((g) => g.trim())
       if (glosses.length === 0) continue
       const tags = s.tags ?? []
+      // Inflections are dropped, but spelling/dialect variants ("alt-of") are kept.
+      if (config.skipFormOf && tags.includes('form-of') && !tags.includes('alt-of')) continue
       const tagged = config.regionsFromTags(tags, s.raw_tags ?? [])
       const sense: Sense = {
         glosses,
-        // The rule for untagged senses: they belong to every region.
-        regions: tagged.length > 0 ? config.regions.filter((r) => tagged.includes(r)) : [...config.regions],
+        // The rule for untagged senses: they belong to every region. (Shared array: stored files omit it.)
+        regions: tagged.length > 0 ? config.regions.filter((r) => tagged.includes(r)) : config.regions,
         regionTagged: tagged.length > 0,
         labels: tags.filter((t) => LABELS.has(t)),
       }
@@ -188,6 +191,10 @@ async function main() {
   const [lang, ...flags] = process.argv.slice(2)
   if (!lang) throw new Error('Usage: build-language.ts <lang> [--refresh]')
   const config = (await import(join(ROOT, 'languages', `${lang}.ts`))).default as LanguageConfig
+  for (const [group, members] of Object.entries(config.regionGroups ?? {})) {
+    const unknown = members.filter((m) => !config.regions.includes(m))
+    if (unknown.length) throw new Error(`Region group "${group}" has regions not in config.regions: ${unknown.join(', ')}`)
+  }
   const source = await download(config, flags.includes('--refresh'))
 
   const entries = await readEntries(source.file, config)
@@ -197,14 +204,21 @@ async function main() {
 
   const outDir = join(ROOT, 'packages', lang, 'data')
   await rm(outDir, { recursive: true, force: true })
-  const wordShards = await writeShards(join(outDir, 'words'), byWord as Map<string, WordShard[string]>)
-  const enShards = await writeShards(join(outDir, 'en'), english as Map<string, EnglishShard[string]>)
+  const storedWords = new Map<string, WordShard[string]>(
+    [...byWord].map(([w, es]) => [w, es.map((e) => ({ ...e, senses: e.senses.map((s) => toStored(s)) }))]),
+  )
+  const storedEnglish = new Map<string, EnglishShard[string]>(
+    [...english].map(([t, hits]) => [t, hits.map((h) => toStored(h))]),
+  )
+  const wordShards = await writeShards(join(outDir, 'words'), storedWords)
+  const enShards = await writeShards(join(outDir, 'en'), storedEnglish)
 
   const senses = entries.flatMap((e) => e.senses)
   const meta: LanguageMeta = {
     lang: config.lang,
     name: config.name,
     regions: config.regions,
+    ...(config.regionGroups ? { regionGroups: config.regionGroups } : {}),
     source: {
       name: 'Wiktionary, via Kaikki.org (wiktextract)',
       url: source.url,

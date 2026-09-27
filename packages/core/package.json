@@ -1,7 +1,7 @@
 {
   "name": "language-dialects-library",
   "version": "0.1.0",
-  "description": "Look up words across a language's regional dialects (e.g. Northern, Central and Southern Vietnamese), with data from Wiktionary loaded on demand.",
+  "description": "Find how words are said in different regions and dialects of a language (Spanish, Vietnamese, …), with Wiktionary data loaded on demand.",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -11,13 +11,24 @@
       "import": "./dist/index.js"
     }
   },
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "sideEffects": false,
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "prepublishOnly": "npm run build"
   },
-  "keywords": ["dictionary", "dialect", "vietnamese", "wiktionary", "translation", "language-learning"],
+  "keywords": [
+    "dictionary",
+    "dialect",
+    "regional",
+    "translation",
+    "language-learning",
+    "wiktionary",
+    "spanish",
+    "vietnamese"
+  ],
   "license": "MIT",
   "repository": {
     "type": "git",

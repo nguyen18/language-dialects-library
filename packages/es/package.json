@@ -1,0 +1,14 @@
+{
+  "name": "language-dialects-library-es",
+  "version": "0.1.0",
+  "description": "Spanish dictionary data with country and regional usage (Spain, Mexico, Argentina, the Caribbean, …), from Wiktionary via Kaikki.org. Loaded by language-dialects-library.",
+  "files": ["data", "LICENSE", "README.md"],
+  "keywords": ["spanish", "español", "dictionary", "dialect", "wiktionary", "language-dialects-library"],
+  "license": "CC-BY-SA-4.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/nguyen18/language-dialects-library.git",
+    "directory": "packages/es"
+  },
+  "homepage": "https://github.com/nguyen18/language-dialects-library#readme"
+}

@@ -1,4 +1,5 @@
 import {
+  fromStored,
   normalizeEnglish,
   shardKey,
   type EnglishShard,
@@ -43,7 +44,10 @@ export type DictionaryOptions = {
 }
 
 export type SearchOptions = {
-  /** Only return words used in this region (see meta().regions). Untagged words count as every region. */
+  /**
+   * Only return words used in this region, or in any region of a group (see meta().regions and
+   * meta().regionGroups, e.g. Spanish "Mexico" or "Latin America"). Untagged words count as every region.
+   */
   region?: string
   /** Labels to leave out. Defaults to DEFAULT_EXCLUDED_LABELS; pass [] to include everything. */
   exclude?: string[]
@@ -106,26 +110,38 @@ export function createDictionary(options: DictionaryOptions): Dictionary {
 
     async lookup(word) {
       const w = word.trim()
-      const data = await shard<WordShard>('words', w)
-      return data?.[w] ?? data?.[w.toLowerCase()] ?? []
+      const [m, data] = await Promise.all([meta(), shard<WordShard>('words', w)])
+      const stored = data?.[w] ?? data?.[w.toLowerCase()] ?? []
+      return stored.map((e) => ({ ...e, senses: e.senses.map((s) => fromStored(s, m.regions)) }))
     },
 
     async searchEnglish(term, { region, exclude = DEFAULT_EXCLUDED_LABELS, limit = 10 } = {}) {
       const key = normalizeEnglish(term)
       if (!key) return []
       const m = await meta()
-      if (region && !m.regions.includes(region)) {
-        throw new Error(`language-dialects-library: "${region}" isn't a ${m.name} region (${m.regions.join(', ')})`)
+      // A region, or a group standing for all its regions.
+      let wanted: Set<string> | null = null
+      if (region) {
+        const members = m.regions.includes(region) ? [region] : m.regionGroups?.[region]
+        if (!members) {
+          const groups = Object.keys(m.regionGroups ?? {})
+          throw new Error(
+            `language-dialects-library: "${region}" isn't a ${m.name} region or group ` +
+              `(regions: ${m.regions.join(', ')}${groups.length ? `; groups: ${groups.join(', ')}` : ''})`,
+          )
+        }
+        wanted = new Set(members)
       }
-      const hits = (await shard<EnglishShard>('en', key))?.[key] ?? []
+      const inWanted = (h: Hit) => !wanted || h.regions.some((r) => wanted.has(r))
+      const hits = ((await shard<EnglishShard>('en', key))?.[key] ?? []).map((h) => fromStored(h, m.regions))
       const excluded = new Set(exclude)
-      const regional = (h: Hit) => Boolean(region && h.regionTagged)
+      const regional = (h: Hit) => Boolean(wanted && h.regionTagged)
       // Best first: the English term is the gloss's main meaning, the word is tagged for the requested
       // region, the word is plain rather than slang or literary, the word is common (has more senses),
       // then the word's earlier senses.
       const ranked = hits
         .filter((h) => !h.labels.some((l) => excluded.has(l)))
-        .filter((h) => !region || h.regions.includes(region))
+        .filter(inWanted)
         .sort(
           (a, b) =>
             Number(b.primary) - Number(a.primary) ||

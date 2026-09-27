@@ -1,5 +1,5 @@
-// Shapes of the generated data files. The build script (scripts/build-language.ts) writes them
-// and the API in index.ts reads them, so both import these types.
+// Shapes of the data. The build script (scripts/build-language.ts) writes the Stored* types to the
+// data files; the API in index.ts reads them and returns the full Sense/Entry/Hit types.
 
 /** One meaning of a word. Regions are per sense: a word can be common in one meaning and regional in another. */
 export type Sense = {
@@ -47,8 +47,13 @@ export type LanguageMeta = {
   lang: string
   /** English name, e.g. "Vietnamese". */
   name: string
-  /** The language's regions, e.g. ["Northern", "Central", "Southern"]. */
+  /** The language's regions, e.g. ["Northern", "Central", "Southern"], or countries for Spanish. */
   regions: string[]
+  /**
+   * Named groups of regions that can be searched as one, e.g. Spanish "Latin America" or "Caribbean".
+   * Omitted when the language has none.
+   */
+  regionGroups?: Record<string, string[]>
   source: { name: string; url: string; retrieved: string; lastModified: string | null }
   license: { name: string; url: string }
   counts: { entries: number; senses: number; regionTaggedSenses: number; englishTerms: number }
@@ -56,22 +61,48 @@ export type LanguageMeta = {
   shards: { words: string[]; en: string[] }
 }
 
+// Stored forms. To keep files small, a sense with no region tag has no `regions` (it means every
+// region, regionTagged false), and empty `labels` are left out. The API fills both back in.
+export type StoredSense = Omit<Sense, 'regions' | 'regionTagged' | 'labels'> & { regions?: string[]; labels?: string[] }
+export type StoredEntry = Omit<Entry, 'senses'> & { senses: StoredSense[] }
+export type StoredHit = Omit<Hit, 'regions' | 'regionTagged' | 'labels'> & { regions?: string[]; labels?: string[] }
+
 /** words/<shard>.json: entries keyed by headword. */
-export type WordShard = Record<string, Entry[]>
+export type WordShard = Record<string, StoredEntry[]>
 
 /** en/<shard>.json: hits keyed by lowercase English term. */
-export type EnglishShard = Record<string, Hit[]>
+export type EnglishShard = Record<string, StoredHit[]>
+
+/** Converts a full sense or hit to its stored form. */
+export function toStored<T extends { regions: string[]; regionTagged: boolean; labels: string[] }>(item: T) {
+  const { regions, regionTagged, labels, ...rest } = item
+  return {
+    ...rest,
+    ...(regionTagged ? { regions } : {}),
+    ...(labels.length ? { labels } : {}),
+  }
+}
+
+/** Converts a stored sense or hit back to its full form, given the language's regions. */
+export function fromStored<T extends { regions?: string[]; labels?: string[] }>(item: T, allRegions: string[]) {
+  return {
+    ...item,
+    regions: item.regions ?? allRegions,
+    regionTagged: item.regions !== undefined,
+    labels: item.labels ?? [],
+  }
+}
 
 /**
- * Which shard file a term lives in: its first two letters without diacritics (đ counts as d), so a
- * lookup only downloads a small file. Characters outside a-z become "_", e.g. "ở" -> "o_", "3D" -> "_d".
+ * Which shard file a term lives in: its first two letters without diacritics (đ counts as d, ñ as n),
+ * so a lookup only downloads a small file. Characters outside a-z become "_", e.g. "ở" -> "o_", "3D" -> "_d".
  */
 export function shardKey(term: string): string {
   const base = term
     .trim()
     .toLowerCase()
     .normalize('NFD')
-    .replace(/[̀-ͯ]/g, '')
+    .replace(/[\u0300-\u036f]/g, '')
     .replace(/đ/g, 'd')
   const letter = (c: string) => (c >= 'a' && c <= 'z' ? c : '_')
   return letter(base.charAt(0)) + letter(base.charAt(1))
