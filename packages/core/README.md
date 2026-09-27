@@ -3,7 +3,7 @@
 Find how people say things **in different regions and dialects** of a language: *coche* in Spain but *carro* in Mexico, *lợn* in Northern Vietnam but *heo* in the South. One small package covers every language in this repo, with dictionary data from [Wiktionary](https://en.wiktionary.org/) (via [Kaikki.org](https://kaikki.org/)) loaded only when you need it.
 
 ```ts
-import { createDictionary } from 'language-dialects-library'
+import { createDictionary, createTranslator } from 'language-dialects-library'
 
 const es = createDictionary({ lang: 'es' })
 await es.searchEnglish('car', { region: 'Spain' })              // coche, …
@@ -14,6 +14,11 @@ const vi = createDictionary({ lang: 'vi' })
 await vi.searchEnglish('pig', { region: 'Southern' })           // heo, …
 await vi.searchEnglish('not', { region: 'Southern' })           // hông, hổng (Southern forms of không), không, …
 await vi.lookup('má') // "cheek" everywhere; "mother; mom" in the South
+
+// Translate with context: the right part of speech and meaning, and forms like "said" -> "say".
+const toVi = createTranslator({ lang: 'vi' })
+await toVi.translate('cool', { region: 'Southern', meaning: 'awesome' }) // ngầu, … (not mát, "cool" as in temperature)
+await toVi.translate('said', { region: 'Southern' })                     // say (verb) → nói
 ```
 
 You install one small package (about 5 kB). Dictionary data is **not bundled**: each lookup fetches one small file (usually 5–100 kB compressed) from the language's data package on the jsDelivr CDN, and caches it.
@@ -24,6 +29,9 @@ You install one small package (about 5 kB). Dictionary data is **not bundled**: 
 |---|---|---|---|---|---|
 | Spanish | `es` | [`language-dialects-library-es`](packages/es) | 23 countries, plus groups: Latin America, Central America, Caribbean, South America, Río de la Plata | 123,995 | 11,940 of 153,963 (7.8%) |
 | Vietnamese | `vi` | [`language-dialects-library-vi`](packages/vi) | Northern, Central, Southern | 35,394 | 1,330 of 42,419 (3.1%) |
+| English | `en` | [`language-dialects-library-en`](packages/en) | 15 countries/areas (US, UK, Australia, India, …), plus groups: North America, British Isles, Commonwealth, … | 594,544 | 35,393 of 751,515 (4.7%) |
+
+English is also the **helper language for translating**: it gives each English word's parts of speech, meanings and base forms, which [`createTranslator`](#translating-with-context) uses.
 
 More languages are planned. Each one is a config file in [`languages/`](languages) plus a data package in `packages/<code>`; see [Adding a language](#adding-a-language).
 
@@ -53,6 +61,8 @@ Ways to say an English word or short phrase, best first, one result per word. Ea
 
 Ranking, in order: the term is the gloss's main meaning → tagged for the requested region → plain word (no slang/literary labels) → common word (more senses in the dictionary) → earlier sense.
 
+- `pos`: only these parts of speech, e.g. `['verb']` (see [Parts of speech](#parts-of-speech)).
+
 ### `dictionary.lookup(word)`
 
 All entries for a word in the language, with every sense's glosses, regions and labels.
@@ -60,6 +70,35 @@ All entries for a word in the language, with every sense's glosses, regions and 
 ### `dictionary.meta()`
 
 The language's name, regions, region groups, source, license, build date and counts.
+
+## Translating with context
+
+`searchEnglish` matches the English word you give it, in any meaning. That picks the wrong word when a word has several: *can* (be able to) vs. *can* (a tin); *cool* (awesome) vs. *cool* (a bit cold). `createTranslator` uses the English data to translate the meaning you intend:
+
+```ts
+const toVi = createTranslator({ lang: 'vi' })       // loads English + Vietnamese on demand
+
+await toVi.readings('said')                          // [{ lemma: 'say', pos: 'verb', via: 'simple past and past participle of say', glosses: [...] }, ...]
+await toVi.translate('can', { pos: 'verb' })         // "be able to", not the container
+await toVi.translate('cool', { meaning: 'awesome', region: 'Southern' }) // ngầu, chất, khét, … (not mát)
+await toVi.translate('just', { pos: 'adv', region: 'Southern' }) // vừa, chỉ … thôi
+```
+
+`translate(term, { region?, pos?, meaning?, exclude?, limit? })` returns one group per English **reading** (base word + part of speech), each with its English `glosses` and target-language `hits`:
+
+1. **Forms and spellings are followed to the base word:** irregular forms from the data (*said* → *say*, *was* → *be*, *dont* → *don't*) and regular ones by rule (*walked* → *walk*, *cities* → *city*, *running* → *run*; see `regularBaseForms`).
+2. **Parts of speech are matched across languages** with `compatiblePos`: an English auxiliary verb may be a particle in Vietnamese, and an English adjective may be a verb in another language.
+3. **No direct match?** It tries short terms from the English definitions ("To be able to." → "be able to").
+4. **`meaning`** is a few words describing the sense you want. Readings and results whose definitions share them rank first ("cool (awesome; great)" over "cool" the temperature). Without it, mainstream readings rank before informal/slang ones, then the English dictionary's order.
+
+Pass `pos` and/or `meaning` whenever you know them: without context, the first reading is only a guess (e.g. *just* the adjective "fair" comes before *just* "only").
+
+## Parts of speech
+
+Entries and results use Wiktionary's part-of-speech codes (`noun`, `verb`, `adj`, `adv`, `pron`, `det`, `prep`, `conj`, `intj`, `particle`, `classifier`, `num`, `phrase`, `contraction`, …).
+
+- `POS_NAMES` / `posName(code)`: readable names and one-line explanations for learners (`posName('adj')` → "Adjective"; `particle`: "A small word that adds grammar or tone rather than meaning, e.g. Vietnamese đã (past)…").
+- `compatiblePos(englishPos)`: the parts of speech that can translate an English one in other languages.
 
 ## How regions work
 
@@ -77,6 +116,7 @@ This is a suggestion tool, not a curated translation dictionary. Check results b
 - **No word frequencies.** The source doesn't say how common a word is. Ranking uses the number of senses as a rough stand-in, so an obscure word can occasionally outrank an everyday one.
 - **English search matches Wiktionary's wording.** It finds terms that appear in glosses ("car", "wait", "mother"), not paraphrases. Grammar words with no equivalent (like "the" in Vietnamese) return nothing.
 - **Base words only for Spanish.** Conjugations and plurals are left out; look up *hablar*, not *hablamos*.
+- **Grammar words translate poorly.** Target words defined by their function ("marks the future tense" for Vietnamese *sẽ*) aren't found from English words like *will*, and *the*, *is* or *gonna* may return nothing useful. The translator helps with forms and meanings, not with grammar.
 
 ## License and attribution
 
@@ -102,11 +142,11 @@ npm run typecheck
 npm run build                        # compile the API to packages/core/dist
 ```
 
-Generated data isn't committed (it would bloat git history); it's built before publishing. Spanish downloads about 1 GB; the build takes seconds and about 550 MB of memory.
+Generated data isn't committed (it would bloat git history); it's built before publishing. Downloads: Vietnamese 79 MB, Spanish 1 GB, English 3.3 GB. Builds take seconds (English: about 25 s and 1.4 GB of memory).
 
 ### Adding a language
 
-1. Add `languages/<code>.ts`: the Kaikki language name, the language's regions (and groups, if any), and how to read regions from Wiktionary's tags. See [`languages/vi.ts`](languages/vi.ts) (dialect areas) and [`languages/es.ts`](languages/es.ts) (countries and groups). Set `skipFormOf` for heavily inflected languages.
+1. Add `languages/<code>.ts`: the Kaikki language name, the language's regions (and groups, if any), and how to read regions from Wiktionary's tags. See [`languages/vi.ts`](languages/vi.ts) (dialect areas), [`languages/es.ts`](languages/es.ts) (countries and groups) and [`languages/en.ts`](languages/en.ts) (trimming a very large language). Set `skipFormOf` for heavily inflected languages; for very large ones, see the trimming options in [`scripts/language-config.ts`](scripts/language-config.ts) (`dropTechnical`, `formOfPos`, `keepFormOf`, `maxSensesPerEntry`, `shardLength`, …).
 2. Copy a data package (`packages/es`) to `packages/<code>` and update its `package.json` and `README.md`.
 3. `npm run build:data -- <code>`, check the results, add a few real-data tests, and publish.
 
@@ -115,7 +155,8 @@ Languages in non-Latin scripts (Chinese, Arabic, Russian, …) will need a scrip
 ### Publishing
 
 ```sh
-npm run build:data -- es --refresh && npm run build:data -- vi --refresh && npm test
+npm run build:data -- en --refresh && npm run build:data -- es --refresh && npm run build:data -- vi --refresh && npm test
+npm publish -w language-dialects-library-en
 npm publish -w language-dialects-library-es
 npm publish -w language-dialects-library-vi
 npm publish -w language-dialects-library

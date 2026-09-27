@@ -4,7 +4,7 @@ Reference for future sessions/agents. Read this before changing the repo. The us
 
 ## What this is and why
 
-An open-source library for looking up words by **region or dialect**, across many languages (e.g. Spanish *coche* in Spain vs. *carro* in Mexico; Vietnamese *lợn* in the North vs. *heo* in the South). Languages so far: **Vietnamese** (`vi`, 2026-09-27) and **Spanish** (`es`, 2026-09-27). It started as a data source for **Language Helper** (`~/dev/Language-Helper`), which teaches a language by building on how the learner already talks and targets Southern Vietnamese first. The owner (GitHub `nguyen18`) wants this one repo to eventually hold **many languages** behind a single import.
+An open-source library for looking up words by **region or dialect**, across many languages (e.g. Spanish *coche* in Spain vs. *carro* in Mexico; Vietnamese *lợn* in the North vs. *heo* in the South). Languages so far: **Vietnamese** (`vi`), **Spanish** (`es`) and **English** (`en`), all added 2026-09-27. English is also the **helper language** for `createTranslator` (owner's request: match the English word's part of speech so the right contextual meaning gets translated). It started as a data source for **Language Helper** (`~/dev/Language-Helper`), which teaches a language by building on how the learner already talks and targets Southern Vietnamese first. The owner (GitHub `nguyen18`) wants this one repo to eventually hold **many languages** behind a single import.
 
 Decisions (2026-09-27, with the owner):
 - **Source:** Kaikki.org's JSONL extraction of English Wiktionary (wiktextract). Chosen over the Free Vietnamese Dictionary Project (no dialect tags) and research corpora (sentences, not dictionaries).
@@ -19,7 +19,8 @@ Decisions (2026-09-27, with the owner):
 languages/<lang>.ts          per-language build config (regions, tag → region mapping, filters)
 scripts/build-language.ts    Kaikki JSONL → packages/<lang>/data
 scripts/language-config.ts   LanguageConfig type
-packages/core/               npm "language-dialects-library": the API (src/index.ts) + shared types (src/types.ts)
+packages/core/               npm "language-dialects-library": the API (src/index.ts), shared types (src/types.ts),
+                             parts of speech (src/pos.ts), translator (src/translate.ts)
 packages/core/test/          node:test tests (fake-data ranking tests + real-data checks when built)
 packages/<lang>/             npm "language-dialects-library-<lang>": data/ (generated), LICENSE (CC BY-SA 4.0 text), README
 .cache/                      downloaded Kaikki files (gitignored)
@@ -35,7 +36,7 @@ npm workspaces; TypeScript everywhere. Scripts and tests run directly with `node
 - **Stored vs. full form:** files store `StoredSense`/`StoredHit`, where an **untagged sense omits `regions`** (meaning every region, `regionTagged: false`) and empty `labels` are omitted. `toStored()` (build) and `fromStored(item, meta.regions)` (API) convert. Consumers only ever see full `Sense`/`Entry`/`Hit`. This matters for Spanish: listing 23 countries on every untagged sense bloated the data; Vietnamese also shrank from 19.6 to 12.2 MB.
 - `Sense`: `glosses`, `regions`, `regionTagged`, `labels`, optional `altOf`.
 - `Hit`: word, pos, gloss, regions, regionTagged, labels, altOf, `senseIndex`, `senses` (the word's total sense count), `primary`.
-- **Sharding:** `shardKey()` = first two letters, lowercased, diacritics stripped (so ñ → n), đ → d, non a–z → `_` (`không` → `kh`, `ở` → `o_`, `ñame` → `na`). Latin-script only: non-Latin languages would all land in `__` and need a script-aware key (a format change → `DATA_VERSION` bump). Two letters (not one) keep files small: typical en shard ≈ 13 kB gzipped, largest ≈ 51 kB (one-letter shards were up to 163 kB). The same function is used to write and read, so **changing it requires a data rebuild and a `DATA_VERSION` bump**.
+- **Sharding:** `shardKey(term, length = 2)` = first `length` letters (English uses 3, recorded as `meta.shardLength`; omitted means 2), lowercased, diacritics stripped (so ñ → n), đ → d, non a–z → `_` (`không` → `kh`, `ở` → `o_`, `ñame` → `na`). Latin-script only: non-Latin languages would all land in `__` and need a script-aware key (a format change → `DATA_VERSION` bump). Two letters (not one) keep files small: typical en shard ≈ 13 kB gzipped, largest ≈ 51 kB (one-letter shards were up to 163 kB). The same function is used to write and read, so **changing it requires a data rebuild and a `DATA_VERSION` bump**.
 
 ## Build pipeline (`scripts/build-language.ts`)
 
@@ -52,14 +53,33 @@ Vietnamese (`languages/vi.ts`): regions Northern/Central/Southern. Tags `Souther
 
 Spanish (`languages/es.ts`): regions are 23 **countries** (Spain, Mexico, the Central American, Caribbean and South American countries, United States, Philippines, Equatorial Guinea). `regionGroups`: Latin America, Central America, Caribbean, South America, Río de la Plata (Argentina + Uruguay). Tag mapping: country tags (hyphenated, e.g. `El-Salvador`) → country; `US`/`Louisiana` → United States; areas of Spain (`Andalusia`, `Canary-Islands`, `Aragon`, …) → Spain; group tags (`Latin-America`, `Central-America`, `Caribbean`, `South-America`, `Rioplatense`, `Lunfardo`) → all their countries; raw tags starting "in …" are matched by name. `skipFormOf: true`: 721,628 of 875,726 source senses are conjugations/plurals. Build of 2026-09-27 (Kaikki file dated 2026-09-25, 1.05 GB): 123,995 entries, 153,963 senses, 11,940 region-tagged (7.8%), 92,137 English terms, 38.3 MB raw across 928 files; largest shard ≈111 kB gzipped; ~7 s and ~550 MB memory. Spot checks: car → coche (Spain) / carro (Mexico); bus → camión (Mexico), guagua (Cuba, Canary Islands); computer → ordenador (Spain) / computadora (Latin America); cool → guay (Spain) / chido (Mexico); popcorn → pochoclo (Argentina); you → vos (Río de la Plata).
 
+### Large-language trimming (English)
+
+`LanguageConfig` options added for English (1.49M entries, 3.3 GB): `dropTechnical` (drop entries whose every sense has a Wiktionary `topics` field), `formOfPos` (keep inflection senses only for these POS), `keepFormOf(form, lemma, pos)` (English: drop regular forms via `isRegularForm` in `languages/en.ts`; y→i only after a consonant so *said*/*paid* stay), `dropLabels` (obsolete, archaic), `maxSensesPerEntry` (6), `maxGlossLength` (140), `englishIndex: false` (no en/ index for English yet), `shardLength: 3`, plus `keepWord` ≤ 2 words and `skipPos` (name, symbol, proverb, …). English regions: 15 countries/areas with groups (North America, British Isles, Oceania, South Asia, Southeast Asia, Africa, Commonwealth); local varieties map to their country. Build of 2026-09-27 (Kaikki file dated 2026-09-25): 594,544 entries, 751,515 senses, 35,393 region-tagged (4.7%), 92.5 MB across 9,598 files, npm tarball 20 MB; largest shard ≈184 kB gzipped; ~25 s, ~1.4 GB memory.
+
 ## API (`packages/core/src/index.ts`)
 
 `createDictionary({ lang, baseUrl?, load? })` → `{ meta, lookup, searchEnglish }`.
 - Default loader: `fetch` from `dataUrl(lang)` = `https://cdn.jsdelivr.net/npm/language-dialects-library-<lang>@<DATA_VERSION>/data`. `DATA_VERSION` is a jsDelivr range (`'0.1'`).
 - Every file loads at most once per dictionary (promise cache); failed loads are evicted for retry. Shards not listed in `meta.shards` aren't requested (no 404s).
-- `searchEnglish`: `region` may be a region or a `regionGroups` name (a group = any of its regions); unknown names throw, listing regions and groups. Then filter out `exclude` labels (default `DEFAULT_EXCLUDED_LABELS`: vulgar, offensive, derogatory, archaic, obsolete, dated, historical, rare, abbreviation) and hits outside the wanted regions; sort by `primary` → tagged for the requested region → label penalty (mild register labels 1, others 2) → `senses` (more = more common) → `senseIndex`; one hit per word; `limit` (10). Unknown region throws.
+- `searchEnglish`: optional `pos` filter (exact POS codes). `region` may be a region or a `regionGroups` name (a group = any of its regions); unknown names throw, listing regions and groups. Then filter out `exclude` labels (default `DEFAULT_EXCLUDED_LABELS`: vulgar, offensive, derogatory, archaic, obsolete, dated, historical, rare, abbreviation) and hits outside the wanted regions; sort by `primary` → tagged for the requested region → label penalty (mild register labels 1, others 2) → `senses` (more = more common) → `senseIndex`; one hit per word; `limit` (10). Unknown region throws.
+
+## Parts of speech (`src/pos.ts`)
+
+`POS_NAMES` (code → readable name + one-line learner explanation), `posName()`, and `COMPATIBLE_POS`/`compatiblePos()`: which target POS can translate an English POS (verb → verb/particle/phrase, adj → adj/verb, …), because languages don't align one to one.
+
+## Translator (`src/translate.ts`)
+
+`createTranslator({ lang, english?, target?, baseUrl?/load? })` → `{ readings(term), translate(term, { region?, pos?, meaning?, exclude?, limit? }) }`. It imports `createDictionary` from index.ts, and index.ts re-exports it at the end (circular import is fine: only used at call time).
+
+- **readings:** English `lookup` of the term (and lowercase); plus, at the top level, the base word of a regular form from `regularBaseForms()` (candidates like walk/city/run; the one with the **most senses** wins, so *running* → *run*, not the obscure *runn*). Variant senses whose first gloss contains "of"/"for" ("simple past of say", "Misspelling of don't") are followed to their target, up to 2 hops, recording `via`. Readings are merged by (lemma, pos); `marginal` = all its senses are informal/slang/colloquial/dialectal/rare/nonstandard/Internet/humorous.
+- **translate:** per reading, `searchEnglish(lemma, { pos: compatiblePos(pos) })`; if empty, short terms from the first 3 English glosses. With `meaning`, hits are re-ranked by content-word overlap with the hit's gloss (its parentheses carry context: "cool (awesome; great)"), and groups by overlap with English glosses. Groups sort by meaning score → non-marginal first → English dictionary order. Groups with the same hit list as an earlier group are dropped.
+- **Results on the Language Helper top-100 list (Southern Vietnamese, no context):** top pick matched the hand-made list for 27 words (plain search: 23), the hand-made word appeared elsewhere in results for 31 (28), nothing for 6 (20). With `pos`/`meaning`: cool+awesome → ngầu (vi) / chido (es Mexico); just+adv → vừa, chỉ … thôi; still+adv → vẫn; can+verb → biết (not ngũ tạng).
 
 ## Known limitations / tuning notes
+
+- Without `pos`/`meaning`, the first reading follows the English dictionary's order, which isn't frequency (e.g. *just* the adjective "fair" before the adverb; *drove* the noun "herd" before the past of *drive*). Callers should pass context.
+- Grammar words defined by function ("marks the future tense" for *sẽ*) aren't reachable from English *will*; *will* → *biết*. *gonna*, *would*, *wanna*, *didnt* still return nothing.
 
 - No frequency data; `senses` is a proxy and sometimes wrong (e.g. "wait" ranks rare *dàng* first; "mother" ranks *mẫu* above *mẹ*).
 - Region-tagged words rank above untagged ones when a region is given, so region searches surface regional/kinship words first ("I", Southern → con, tao, ngộ, tui before tôi). Intentional for dialect learning, but not "most common first".
@@ -70,7 +90,7 @@ Spanish (`languages/es.ts`): regions are 23 **countries** (Spain, Mexico, the Ce
 
 ## Publishing (not yet done as of 2026-09-27)
 
-Rebuild each language with `--refresh`, `npm test`, then publish each data package (`npm publish -w language-dialects-library-es`, `-vi`) and the API (`npm publish -w language-dialects-library`). Needs `npm login`. `language-dialects-library-es` was also free on npm on 2026-09-27 (checked when adding Spanish). Unscoped names were free on npm on 2026-09-27. Data-only updates: bump the data package's patch version within `DATA_VERSION`'s range.
+Rebuild each language with `--refresh`, `npm test`, then publish each data package (`npm publish -w language-dialects-library-en`, `-es`, `-vi`) and the API (`npm publish -w language-dialects-library`). Needs `npm login`. `language-dialects-library-es` and `-en` were also free on npm on 2026-09-27. Unscoped names were free on npm on 2026-09-27. Data-only updates: bump the data package's patch version within `DATA_VERSION`'s range.
 
 ## Working conventions
 

@@ -39,6 +39,7 @@ type KaikkiSense = {
   glosses?: string[]
   tags?: string[]
   raw_tags?: string[]
+  topics?: string[]
   alt_of?: { word: string }[]
   form_of?: { word: string }[]
 }
@@ -64,19 +65,27 @@ async function download(config: LanguageConfig, refresh: boolean) {
 
 async function readEntries(file: string, config: LanguageConfig): Promise<Entry[]> {
   const skipPos = new Set(config.skipPos ?? [])
+  const dropLabels = new Set(config.dropLabels ?? [])
+  const cut = (g: string) =>
+    config.maxGlossLength && g.length > config.maxGlossLength ? `${g.slice(0, config.maxGlossLength - 1).trimEnd()}…` : g
   const entries: Entry[] = []
   const lines = createInterface({ input: createReadStream(file), crlfDelay: Infinity })
   for await (const line of lines) {
     if (!line.trim()) continue
     const raw = JSON.parse(line) as KaikkiEntry
     if (skipPos.has(raw.pos) || (config.keepWord && !config.keepWord(raw.word))) continue
+    if (config.dropTechnical && raw.senses?.length && raw.senses.every((s) => s.topics?.length)) continue
     const senses: Sense[] = []
     for (const s of raw.senses ?? []) {
-      const glosses = (s.glosses ?? []).filter((g) => g.trim())
+      const glosses = (s.glosses ?? []).filter((g) => g.trim()).map(cut)
       if (glosses.length === 0) continue
       const tags = s.tags ?? []
-      // Inflections are dropped, but spelling/dialect variants ("alt-of") are kept.
-      if (config.skipFormOf && tags.includes('form-of') && !tags.includes('alt-of')) continue
+      // Inflections are dropped (all of them, or outside formOfPos), but spelling/dialect variants ("alt-of") are kept.
+      const inflection = tags.includes('form-of') && !tags.includes('alt-of')
+      if (inflection && (config.skipFormOf || (config.formOfPos && !config.formOfPos.includes(raw.pos)))) continue
+      const lemma = s.form_of?.[0]?.word
+      if (inflection && lemma && config.keepFormOf && !config.keepFormOf(raw.word, lemma, raw.pos)) continue
+      if (tags.some((t) => dropLabels.has(t))) continue
       const tagged = config.regionsFromTags(tags, s.raw_tags ?? [])
       const sense: Sense = {
         glosses,
@@ -89,7 +98,9 @@ async function readEntries(file: string, config: LanguageConfig): Promise<Entry[
       if (altOf) sense.altOf = altOf
       senses.push(sense)
     }
-    if (senses.length > 0) entries.push({ word: raw.word, pos: raw.pos, senses })
+    if (senses.length > 0) {
+      entries.push({ word: raw.word, pos: raw.pos, senses: config.maxSensesPerEntry ? senses.slice(0, config.maxSensesPerEntry) : senses })
+    }
   }
   return entries
 }
@@ -175,10 +186,10 @@ function buildEnglishIndex(entries: Entry[]): Map<string, Hit[]> {
   return index
 }
 
-async function writeShards<T>(dir: string, items: Map<string, T>): Promise<string[]> {
+async function writeShards<T>(dir: string, items: Map<string, T>, shardLength: number): Promise<string[]> {
   const shards = new Map<string, Record<string, T>>()
   for (const [key, value] of [...items].sort(([a], [b]) => a.localeCompare(b))) {
-    const shard = shardKey(key)
+    const shard = shardKey(key, shardLength)
     if (!shards.has(shard)) shards.set(shard, {})
     shards.get(shard)![key] = value
   }
@@ -200,7 +211,8 @@ async function main() {
   const entries = await readEntries(source.file, config)
   const byWord = new Map<string, Entry[]>()
   for (const e of entries) byWord.set(e.word, [...(byWord.get(e.word) ?? []), e])
-  const english = buildEnglishIndex(entries)
+  const english = config.englishIndex === false ? new Map<string, Hit[]>() : buildEnglishIndex(entries)
+  const shardLength = config.shardLength ?? 2
 
   const outDir = join(ROOT, 'packages', lang, 'data')
   await rm(outDir, { recursive: true, force: true })
@@ -210,8 +222,8 @@ async function main() {
   const storedEnglish = new Map<string, EnglishShard[string]>(
     [...english].map(([t, hits]) => [t, hits.map((h) => toStored(h))]),
   )
-  const wordShards = await writeShards(join(outDir, 'words'), storedWords)
-  const enShards = await writeShards(join(outDir, 'en'), storedEnglish)
+  const wordShards = await writeShards(join(outDir, 'words'), storedWords, shardLength)
+  const enShards = await writeShards(join(outDir, 'en'), storedEnglish, shardLength)
 
   const senses = entries.flatMap((e) => e.senses)
   const meta: LanguageMeta = {
@@ -233,6 +245,7 @@ async function main() {
       englishTerms: english.size,
     },
     shards: { words: wordShards, en: enShards },
+    ...(shardLength !== 2 ? { shardLength } : {}),
   }
   await writeFile(join(outDir, 'meta.json'), JSON.stringify(meta, null, 2))
 

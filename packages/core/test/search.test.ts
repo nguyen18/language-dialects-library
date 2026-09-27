@@ -4,7 +4,17 @@ import { readFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { describe, it } from 'node:test'
 import { fileURLToPath } from 'node:url'
-import { createDictionary, normalizeEnglish, shardKey, type LanguageMeta, type StoredHit } from '../src/index.ts'
+import {
+  compatiblePos,
+  createDictionary,
+  createTranslator,
+  normalizeEnglish,
+  posName,
+  regularBaseForms,
+  shardKey,
+  type LanguageMeta,
+  type StoredHit,
+} from '../src/index.ts'
 
 describe('shardKey', () => {
   it('uses the first two letters without diacritics', () => {
@@ -13,6 +23,11 @@ describe('shardKey', () => {
     assert.equal(shardKey('ở'), 'o_')
     assert.equal(shardKey('3D'), '_d')
     assert.equal(shardKey('ñame'), 'na')
+  })
+
+  it('can use more letters for large languages', () => {
+    assert.equal(shardKey('running', 3), 'run')
+    assert.equal(shardKey('im', 3), 'im_')
   })
 })
 
@@ -133,5 +148,59 @@ describe('Spanish data', { skip: !existsSync(esData) && 'run `npm run build:data
   it('leaves out inflected forms', async () => {
     assert.deepEqual(await dict.lookup('hablamos'), [])
     assert.ok((await dict.lookup('hablar')).length > 0)
+  })
+})
+
+describe('parts of speech', () => {
+  it('names codes and maps English parts of speech to compatible ones', () => {
+    assert.equal(posName('adj'), 'Adjective')
+    assert.equal(posName('unknown-code'), 'unknown-code')
+    assert.ok(compatiblePos('verb').includes('particle'))
+  })
+})
+
+describe('regularBaseForms', () => {
+  it('undoes regular English endings', () => {
+    assert.ok(regularBaseForms('walked').includes('walk'))
+    assert.ok(regularBaseForms('cities').includes('city'))
+    assert.ok(regularBaseForms('making').includes('make'))
+    assert.ok(regularBaseForms('running').includes('run'))
+    assert.deepEqual(regularBaseForms('go'), [])
+  })
+})
+
+// Translator checks against the real English, Vietnamese and Spanish builds; skipped unless all are built.
+const root = join(dirname(fileURLToPath(import.meta.url)), '..', '..')
+const built = ['en', 'vi', 'es'].every((l) => existsSync(join(root, l, 'data')))
+describe('translator (real data)', { skip: !built && 'build en, vi and es data first' }, () => {
+  const local = (lang: string) =>
+    createDictionary({ lang, load: async (p) => JSON.parse(await readFile(join(root, lang, 'data', p), 'utf8')) })
+  const english = local('en')
+  const vi = createTranslator({ lang: 'vi', english, target: local('vi') })
+  const es = createTranslator({ lang: 'es', english, target: local('es') })
+  const first = async (tr: typeof vi, term: string, options = {}) => (await tr.translate(term, options))[0]
+
+  it('follows irregular and regular forms to the base word', async () => {
+    const said = await first(vi, 'said', { region: 'Southern' })
+    assert.equal(said?.lemma, 'say')
+    assert.equal(said?.hits[0].word, 'nói')
+    assert.equal((await first(vi, 'walked'))?.lemma, 'walk')
+    assert.equal((await first(es, 'running', { pos: 'verb' }))?.lemma, 'run')
+  })
+
+  it('follows texting spellings', async () => {
+    const dont = await first(vi, 'dont')
+    assert.equal(dont?.lemma, "don't")
+  })
+
+  it('uses the part of speech', async () => {
+    const can = await first(vi, 'can', { pos: 'verb' })
+    assert.ok(!can?.hits.some((h) => h.word === 'ngũ tạng'))
+    assert.ok((await first(vi, 'still', { pos: 'adv', region: 'Southern' }))?.hits.some((h) => h.word === 'vẫn'))
+  })
+
+  it('ranks the requested meaning first', async () => {
+    assert.equal((await first(vi, 'cool', { region: 'Southern', meaning: 'awesome great' }))?.hits[0].word, 'ngầu')
+    assert.equal((await first(es, 'cool', { region: 'Mexico', meaning: 'awesome great' }))?.hits[0].word, 'chido')
   })
 })

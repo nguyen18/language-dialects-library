@@ -59,6 +59,8 @@ export type LanguageMeta = {
   counts: { entries: number; senses: number; regionTaggedSenses: number; englishTerms: number }
   /** Shard file names (without .json) in words/ and en/. */
   shards: { words: string[]; en: string[] }
+  /** Letters per shard key; see shardKey. Omitted means 2. */
+  shardLength?: number
 }
 
 // Stored forms. To keep files small, a sense with no region tag has no `regions` (it means every
@@ -94,10 +96,10 @@ export function fromStored<T extends { regions?: string[]; labels?: string[] }>(
 }
 
 /**
- * Which shard file a term lives in: its first two letters without diacritics (đ counts as d, ñ as n),
+ * Which shard file a term lives in: its first `length` letters (two by default) without diacritics (đ counts as d, ñ as n),
  * so a lookup only downloads a small file. Characters outside a-z become "_", e.g. "ở" -> "o_", "3D" -> "_d".
  */
-export function shardKey(term: string): string {
+export function shardKey(term: string, length = 2): string {
   const base = term
     .trim()
     .toLowerCase()
@@ -105,7 +107,9 @@ export function shardKey(term: string): string {
     .replace(/[\u0300-\u036f]/g, '')
     .replace(/đ/g, 'd')
   const letter = (c: string) => (c >= 'a' && c <= 'z' ? c : '_')
-  return letter(base.charAt(0)) + letter(base.charAt(1))
+  let key = ''
+  for (let i = 0; i < length; i++) key += letter(base.charAt(i))
+  return key
 }
 
 /** Normalizes an English search term the same way the index keys were built. */

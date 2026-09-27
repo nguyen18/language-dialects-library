@@ -10,6 +10,7 @@ import {
 } from './types.ts'
 
 export * from './types.ts'
+export * from './pos.ts'
 
 /**
  * Data packages this version of the API reads by default, as a jsDelivr version range.
@@ -49,6 +50,8 @@ export type SearchOptions = {
    * meta().regionGroups, e.g. Spanish "Mexico" or "Latin America"). Untagged words count as every region.
    */
   region?: string
+  /** Only return these parts of speech (Wiktionary codes, see POS_NAMES), e.g. ['verb']. */
+  pos?: string[]
   /** Labels to leave out. Defaults to DEFAULT_EXCLUDED_LABELS; pass [] to include everything. */
   exclude?: string[]
   /** Maximum number of results (default 10). */
@@ -100,8 +103,8 @@ export function createDictionary(options: DictionaryOptions): Dictionary {
 
   // Missing shards simply mean no words start with those letters, so they aren't requested.
   async function shard<T>(kind: 'words' | 'en', term: string): Promise<T | null> {
-    const key = shardKey(term)
     const m = await meta()
+    const key = shardKey(term, m.shardLength)
     return m.shards[kind].includes(key) ? loadOnce<T>(`${kind}/${key}.json`) : null
   }
 
@@ -115,7 +118,7 @@ export function createDictionary(options: DictionaryOptions): Dictionary {
       return stored.map((e) => ({ ...e, senses: e.senses.map((s) => fromStored(s, m.regions)) }))
     },
 
-    async searchEnglish(term, { region, exclude = DEFAULT_EXCLUDED_LABELS, limit = 10 } = {}) {
+    async searchEnglish(term, { region, pos, exclude = DEFAULT_EXCLUDED_LABELS, limit = 10 } = {}) {
       const key = normalizeEnglish(term)
       if (!key) return []
       const m = await meta()
@@ -142,6 +145,7 @@ export function createDictionary(options: DictionaryOptions): Dictionary {
       const ranked = hits
         .filter((h) => !h.labels.some((l) => excluded.has(l)))
         .filter(inWanted)
+        .filter((h) => !pos || pos.includes(h.pos))
         .sort(
           (a, b) =>
             Number(b.primary) - Number(a.primary) ||
@@ -156,3 +160,5 @@ export function createDictionary(options: DictionaryOptions): Dictionary {
     },
   }
 }
+
+export * from './translate.ts'
