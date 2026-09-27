@@ -1,0 +1,142 @@
+import {
+  normalizeEnglish,
+  shardKey,
+  type EnglishShard,
+  type Entry,
+  type Hit,
+  type LanguageMeta,
+  type WordShard,
+} from './types.ts'
+
+export * from './types.ts'
+
+/**
+ * Data packages this version of the API reads by default, as a jsDelivr version range.
+ * Bump it when the data format changes.
+ */
+export const DATA_VERSION = '0.1'
+
+/** Labels left out of search results unless `exclude` is passed. */
+export const DEFAULT_EXCLUDED_LABELS = [
+  'vulgar', 'offensive', 'derogatory', 'archaic', 'obsolete', 'dated', 'historical', 'rare', 'abbreviation',
+]
+
+// Search ranks plain, everyday words first. Labels in the first set cost a little (still normal speech,
+// just a particular register); the second set costs more (specialized, playful or uncommon).
+const MILD_LABELS = new Set(['colloquial', 'informal', 'familiar', 'polite', 'formal', 'endearing', 'honorific'])
+const LABEL_PENALTY = (h: Hit) =>
+  h.labels.reduce((sum, l) => sum + (MILD_LABELS.has(l) ? 1 : 2), 0)
+
+/** Loads one data file by its path inside the data folder, e.g. "meta.json" or "en/no.json". */
+export type LoadJson = (path: string) => Promise<unknown>
+
+export type DictionaryOptions = {
+  /** ISO 639 code of a published data package, e.g. "vi" for language-dialects-library-vi. */
+  lang: string
+  /**
+   * Where the data folder is served. Defaults to the data package on jsDelivr, so nothing has to be
+   * bundled: https://cdn.jsdelivr.net/npm/language-dialects-library-<lang>@<DATA_VERSION>/data
+   */
+  baseUrl?: string
+  /** Custom loader instead of fetch, e.g. reading from disk in Node. Overrides baseUrl. */
+  load?: LoadJson
+}
+
+export type SearchOptions = {
+  /** Only return words used in this region (see meta().regions). Untagged words count as every region. */
+  region?: string
+  /** Labels to leave out. Defaults to DEFAULT_EXCLUDED_LABELS; pass [] to include everything. */
+  exclude?: string[]
+  /** Maximum number of results (default 10). */
+  limit?: number
+}
+
+export type Dictionary = {
+  /** The language's name, regions, source, license and counts. */
+  meta(): Promise<LanguageMeta>
+  /** Entries for a word in the language, e.g. lookup("má"). */
+  lookup(word: string): Promise<Entry[]>
+  /**
+   * Ways to say an English word or short phrase, best first, one result per word. With a region,
+   * words the source tags for that region rank ahead of untagged ones.
+   */
+  searchEnglish(term: string, options?: SearchOptions): Promise<Hit[]>
+}
+
+export function dataUrl(lang: string): string {
+  return `https://cdn.jsdelivr.net/npm/language-dialects-library-${lang}@${DATA_VERSION}/data`
+}
+
+function fetchLoader(baseUrl: string): LoadJson {
+  const base = baseUrl.replace(/\/+$/, '')
+  return async (path) => {
+    const res = await fetch(`${base}/${path}`)
+    if (!res.ok) throw new Error(`language-dialects-library: couldn't load ${base}/${path} (${res.status})`)
+    return res.json()
+  }
+}
+
+export function createDictionary(options: DictionaryOptions): Dictionary {
+  const load = options.load ?? fetchLoader(options.baseUrl ?? dataUrl(options.lang))
+  // Each file is loaded at most once; a failed load is forgotten so it can be retried.
+  const cache = new Map<string, Promise<unknown>>()
+  const loadOnce = <T>(path: string): Promise<T> => {
+    let pending = cache.get(path)
+    if (!pending) {
+      pending = load(path).catch((err: unknown) => {
+        cache.delete(path)
+        throw err
+      })
+      cache.set(path, pending)
+    }
+    return pending as Promise<T>
+  }
+
+  const meta = () => loadOnce<LanguageMeta>('meta.json')
+
+  // Missing shards simply mean no words start with those letters, so they aren't requested.
+  async function shard<T>(kind: 'words' | 'en', term: string): Promise<T | null> {
+    const key = shardKey(term)
+    const m = await meta()
+    return m.shards[kind].includes(key) ? loadOnce<T>(`${kind}/${key}.json`) : null
+  }
+
+  return {
+    meta,
+
+    async lookup(word) {
+      const w = word.trim()
+      const data = await shard<WordShard>('words', w)
+      return data?.[w] ?? data?.[w.toLowerCase()] ?? []
+    },
+
+    async searchEnglish(term, { region, exclude = DEFAULT_EXCLUDED_LABELS, limit = 10 } = {}) {
+      const key = normalizeEnglish(term)
+      if (!key) return []
+      const m = await meta()
+      if (region && !m.regions.includes(region)) {
+        throw new Error(`language-dialects-library: "${region}" isn't a ${m.name} region (${m.regions.join(', ')})`)
+      }
+      const hits = (await shard<EnglishShard>('en', key))?.[key] ?? []
+      const excluded = new Set(exclude)
+      const regional = (h: Hit) => Boolean(region && h.regionTagged)
+      // Best first: the English term is the gloss's main meaning, the word is tagged for the requested
+      // region, the word is plain rather than slang or literary, the word is common (has more senses),
+      // then the word's earlier senses.
+      const ranked = hits
+        .filter((h) => !h.labels.some((l) => excluded.has(l)))
+        .filter((h) => !region || h.regions.includes(region))
+        .sort(
+          (a, b) =>
+            Number(b.primary) - Number(a.primary) ||
+            Number(regional(b)) - Number(regional(a)) ||
+            LABEL_PENALTY(a) - LABEL_PENALTY(b) ||
+            b.senses - a.senses ||
+            a.senseIndex - b.senseIndex,
+        )
+      // One result per word: its best-ranked sense.
+      const seen = new Set<string>()
+      return ranked.filter((h) => !seen.has(h.word) && seen.add(h.word)).slice(0, limit)
+    },
+  }
+}

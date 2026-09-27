@@ -1,0 +1,21 @@
+{
+  "name": "language-dialects-library-monorepo",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "packages/*"
+  ],
+  "engines": {
+    "node": ">=22.6"
+  },
+  "scripts": {
+    "build:data": "node --experimental-strip-types --disable-warning=ExperimentalWarning scripts/build-language.ts",
+    "build": "npm run build -w language-dialects-library",
+    "test": "node --experimental-strip-types --disable-warning=ExperimentalWarning --test packages/core/test/*.test.ts",
+    "typecheck": "tsc -p packages/core --noEmit && tsc -p tsconfig.scripts.json"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "typescript": "^5.8.0"
+  }
+}

@@ -1,0 +1,28 @@
+{
+  "name": "language-dialects-library",
+  "version": "0.1.0",
+  "description": "Look up words across a language's regional dialects (e.g. Northern, Central and Southern Vietnamese), with data from Wiktionary loaded on demand.",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": ["dist"],
+  "sideEffects": false,
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "prepublishOnly": "npm run build"
+  },
+  "keywords": ["dictionary", "dialect", "vietnamese", "wiktionary", "translation", "language-learning"],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/nguyen18/language-dialects-library.git",
+    "directory": "packages/core"
+  },
+  "homepage": "https://github.com/nguyen18/language-dialects-library#readme"
+}

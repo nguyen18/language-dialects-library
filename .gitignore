@@ -1,0 +1,8 @@
+node_modules/
+# Kaikki downloads (scripts/build-language.ts)
+.cache/
+# Generated: data is built and published to npm, not committed (it would bloat git history).
+packages/*/data/
+packages/core/dist/
+*.tgz
+.DS_Store
