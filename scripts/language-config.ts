@@ -1,7 +1,7 @@
 // Per-language settings for the build. Each language adds one file in languages/.
 
 export type LanguageConfig = {
-  /** ISO 639 code; also the data package suffix (language-dialects-library-<lang>). */
+  /** ISO 639 code; also the data package suffix (which-dialect-tool-<lang>). */
   lang: string
   /** English name. */
   name: string
@@ -39,8 +39,11 @@ export type LanguageConfig = {
   /** Keep at most this many senses per entry, and cut glosses longer than maxGlossLength characters. */
   maxSensesPerEntry?: number
   maxGlossLength?: number
-  /** Build the English search index (en/). Default true; off for English itself, where it's not needed yet. */
-  englishIndex?: boolean
+  /**
+   * Build the English search index (en/). Default true. 'regional' indexes only region-tagged senses:
+   * English uses it so "truck" in the UK finds "lorry", without indexing every English word.
+   */
+  englishIndex?: boolean | 'regional'
   /** Letters per shard key (default 2). Large languages use 3 so each file stays small. */
   shardLength?: number
 }

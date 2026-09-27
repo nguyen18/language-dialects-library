@@ -170,37 +170,49 @@ describe('regularBaseForms', () => {
 })
 
 // Translator checks against the real English, Vietnamese and Spanish builds; skipped unless all are built.
+// The fuller quality check is `npm run evaluate` (scripts/evaluate.ts).
 const root = join(dirname(fileURLToPath(import.meta.url)), '..', '..')
 const built = ['en', 'vi', 'es'].every((l) => existsSync(join(root, l, 'data')))
 describe('translator (real data)', { skip: !built && 'build en, vi and es data first' }, () => {
-  const local = (lang: string) =>
-    createDictionary({ lang, load: async (p) => JSON.parse(await readFile(join(root, lang, 'data', p), 'utf8')) })
-  const english = local('en')
-  const vi = createTranslator({ lang: 'vi', english, target: local('vi') })
-  const es = createTranslator({ lang: 'es', english, target: local('es') })
-  const first = async (tr: typeof vi, term: string, options = {}) => (await tr.translate(term, options))[0]
+  const tr = createTranslator({
+    load: (lang) => async (p) => JSON.parse(await readFile(join(root, lang, 'data', p), 'utf8')),
+  })
+  const top = async (word: string, options: Parameters<typeof tr.translate>[1]) =>
+    (await tr.translate(word, options))[0]?.translations.map((t) => t.word) ?? []
 
-  it('follows irregular and regular forms to the base word', async () => {
-    const said = await first(vi, 'said', { region: 'Southern' })
-    assert.equal(said?.lemma, 'say')
-    assert.equal(said?.hits[0].word, 'nói')
-    assert.equal((await first(vi, 'walked'))?.lemma, 'walk')
-    assert.equal((await first(es, 'running', { pos: 'verb' }))?.lemma, 'run')
+  it('follows irregular and regular English forms to the base word', async () => {
+    const [said] = await tr.translate('said', { from: 'en', to: 'vi', toRegion: 'Southern' })
+    assert.equal(said.source.lemma, 'say')
+    assert.equal(said.translations[0].word, 'nói')
+    assert.equal((await tr.senses('walked', { from: 'en' }))[0].lemma, 'walk')
+    assert.equal((await tr.senses('running', { from: 'en', pos: 'verb' }))[0].lemma, 'run')
+    assert.equal((await tr.senses('dont', { from: 'en' }))[0].lemma, "don't")
   })
 
-  it('follows texting spellings', async () => {
-    const dont = await first(vi, 'dont')
-    assert.equal(dont?.lemma, "don't")
+  it('follows regional variants and keeps their region', async () => {
+    const [hong] = await tr.senses('hông', { from: 'vi', fromRegion: 'Southern', pos: 'adv' })
+    assert.equal(hong.lemma, 'không')
+    assert.deepEqual(hong.regions, ['Southern'])
   })
 
-  it('uses the part of speech', async () => {
-    const can = await first(vi, 'can', { pos: 'verb' })
-    assert.ok(!can?.hits.some((h) => h.word === 'ngũ tạng'))
-    assert.ok((await first(vi, 'still', { pos: 'adv', region: 'Southern' }))?.hits.some((h) => h.word === 'vẫn'))
+  it('translates between languages, into a dialect', async () => {
+    assert.ok((await top('chido', { from: 'es', fromRegion: 'Mexico', to: 'vi', toRegion: 'Southern' })).includes('ngầu'))
+    assert.ok((await top('heo', { from: 'vi', fromRegion: 'Southern', to: 'es', toRegion: 'Mexico' })).some((w) => ['cerdo', 'puerco', 'cochino', 'chancho'].includes(w)))
   })
 
-  it('ranks the requested meaning first', async () => {
-    assert.equal((await first(vi, 'cool', { region: 'Southern', meaning: 'awesome great' }))?.hits[0].word, 'ngầu')
-    assert.equal((await first(es, 'cool', { region: 'Mexico', meaning: 'awesome great' }))?.hits[0].word, 'chido')
+  it('translates between dialects of one language', async () => {
+    assert.equal((await top('ngô', { from: 'vi', fromRegion: 'Northern', to: 'vi', toRegion: 'Southern' }))[0], 'bắp')
+    assert.ok((await top('coche', { from: 'es', fromRegion: 'Spain', to: 'es', toRegion: 'Mexico' })).includes('carro'))
+    assert.ok((await top('truck', { from: 'en', fromRegion: 'US', to: 'en', toRegion: 'UK' })).includes('lorry'))
+  })
+
+  it('uses the part of speech and meaning', async () => {
+    assert.ok(!(await top('can', { from: 'en', to: 'vi', pos: 'verb' })).includes('ngũ tạng'))
+    assert.equal((await top('cool', { from: 'en', to: 'vi', toRegion: 'Southern', meaning: 'awesome great' }))[0], 'ngầu')
+    assert.equal((await top('cerdo', { from: 'es', to: 'vi', toRegion: 'Southern', pos: 'noun' }))[0], 'heo')
+  })
+
+  it('keeps register: polite stays polite', async () => {
+    assert.ok((await top('vâng', { from: 'vi', fromRegion: 'Northern', to: 'vi', toRegion: 'Southern' })).includes('dạ'))
   })
 })

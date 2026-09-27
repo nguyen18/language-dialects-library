@@ -12,7 +12,7 @@ import { dirname, join } from 'node:path'
 import { createInterface } from 'node:readline'
 import { fileURLToPath } from 'node:url'
 import {
-  normalizeEnglish,
+  glossTerms,
   shardKey,
   toStored,
   type EnglishShard,
@@ -40,10 +40,14 @@ type KaikkiSense = {
   tags?: string[]
   raw_tags?: string[]
   topics?: string[]
+  synonyms?: { word: string }[]
   alt_of?: { word: string }[]
   form_of?: { word: string }[]
 }
-type KaikkiEntry = { word: string; pos: string; senses?: KaikkiSense[] }
+type KaikkiEntry = { word: string; pos: string; senses?: KaikkiSense[]; synonyms?: { word: string; sense?: string }[] }
+
+// Synonyms kept per sense; enough for dialect equivalents without bloating large languages.
+const MAX_SYNONYMS = 8
 
 async function download(config: LanguageConfig, refresh: boolean) {
   const url = `https://kaikki.org/dictionary/${config.kaikkiName}/kaikki.org-dictionary-${config.kaikkiName}.jsonl`
@@ -96,7 +100,14 @@ async function readEntries(file: string, config: LanguageConfig): Promise<Entry[
       }
       const altOf = s.alt_of?.[0]?.word ?? s.form_of?.[0]?.word
       if (altOf) sense.altOf = altOf
+      const synonyms = [...new Set((s.synonyms ?? []).map((x) => x.word).filter((w) => w && w !== raw.word))]
+      if (synonyms.length) sense.synonyms = synonyms.slice(0, MAX_SYNONYMS)
       senses.push(sense)
+    }
+    // Entry-level synonyms (not tied to a sense) belong to the main meaning.
+    const entrySynonyms = (raw.synonyms ?? []).filter((x) => !x.sense).map((x) => x.word).filter((w) => w && w !== raw.word)
+    if (entrySynonyms.length && senses.length) {
+      senses[0].synonyms = [...new Set([...(senses[0].synonyms ?? []), ...entrySynonyms])].slice(0, MAX_SYNONYMS)
     }
     if (senses.length > 0) {
       entries.push({ word: raw.word, pos: raw.pos, senses: config.maxSensesPerEntry ? senses.slice(0, config.maxSensesPerEntry) : senses })
@@ -105,36 +116,12 @@ async function readEntries(file: string, config: LanguageConfig): Promise<Entry[
   return entries
 }
 
-// Trailing words dropped to also index the bare verb: "wait for" is found by "wait" too.
-const TRAILING_PARTICLE = / (for|to|at|on|with|about|of|in|into|up|out|off|over)$/
-
-// Splits a gloss into English terms, first meaning first: "now, today, this time" -> ["now", "today",
-// "this time"]. Parenthesized notes are dropped. When a gloss explains before a colon, like
-// "Negates the meaning of the modified verb or adjective: not", only the part after it is used.
-// Only short, plain phrases are kept as search terms. Returns [term, position of its meaning].
-function termsOf(gloss: string): [string, number][] {
-  let cleaned = gloss.replace(/\([^)]*\)/g, ' ').replace(/[“”"]/g, '')
-  if (cleaned.includes(':')) cleaned = cleaned.slice(cleaned.lastIndexOf(':') + 1)
-  const terms: [string, number][] = []
-  let position = 0
-  // "I/me" lists two meanings, like "I; me".
-  for (const part of cleaned.split(/[;,/]/)) {
-    const t = normalizeEnglish(part)
-    if (!t || t.split(' ').length > 4 || !/^[a-z][a-z' -]*$/.test(t)) continue
-    terms.push([t, position])
-    // The bare verb shares its phrase's position, so "wait" counts as the main meaning of "to wait for".
-    const bare = t.replace(TRAILING_PARTICLE, '')
-    if (bare !== t && bare) terms.push([bare, position])
-    position++
-  }
-  return terms
-}
 
 // Proper names aren't translations of English words, so they're left out of the English index
 // (they can still be looked up by word).
 const NOT_IN_ENGLISH_INDEX = new Set(['name'])
 
-function buildEnglishIndex(entries: Entry[]): Map<string, Hit[]> {
+function buildEnglishIndex(entries: Entry[], regionalOnly = false): Map<string, Hit[]> {
   // Variant senses ("Southern Vietnam form of không") get the English terms of the word they point to,
   // from that word's senses that aren't themselves variants, preferring the same part of speech
   // (the pronoun "tui" takes the pronoun meanings of "tôi", not its noun "servant").
@@ -157,11 +144,12 @@ function buildEnglishIndex(entries: Entry[]): Map<string, Hit[]> {
   for (const e of entries) {
     if (NOT_IN_ENGLISH_INDEX.has(e.pos)) continue
     e.senses.forEach((sense, senseIndex) => {
+      if (regionalOnly && !sense.regionTagged) return
       const sources = sense.altOf
         ? (mainGlosses.get(`${sense.altOf}\u0000${e.pos}`) ?? mainGlosses.get(sense.altOf) ?? [])
         : sense.glosses
       for (const gloss of sources) {
-        for (const [term, position] of termsOf(gloss)) {
+        for (const [term, position] of glossTerms(gloss)) {
           const id = `${term}\u0000${e.word}\u0000${e.pos}\u0000${senseIndex}`
           if (seen.has(id)) continue
           seen.add(id)
@@ -211,7 +199,8 @@ async function main() {
   const entries = await readEntries(source.file, config)
   const byWord = new Map<string, Entry[]>()
   for (const e of entries) byWord.set(e.word, [...(byWord.get(e.word) ?? []), e])
-  const english = config.englishIndex === false ? new Map<string, Hit[]>() : buildEnglishIndex(entries)
+  const english =
+    config.englishIndex === false ? new Map<string, Hit[]>() : buildEnglishIndex(entries, config.englishIndex === 'regional')
   const shardLength = config.shardLength ?? 2
 
   const outDir = join(ROOT, 'packages', lang, 'data')

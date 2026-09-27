@@ -42,27 +42,35 @@ export function posName(code: string): string {
 }
 
 /**
- * Parts of speech that can translate an English part of speech. Languages don't line up one to one:
- * English auxiliary verbs ("will", "can") and many adverbs become particles in Vietnamese, and
- * English adjectives are often verbs in languages without a separate adjective class.
+ * Parts of speech that can translate a part of speech from any language. Languages don't line up one
+ * to one: English auxiliary verbs ("will", "can") and many adverbs are particles in Vietnamese,
+ * adjectives are verbs in languages without a separate adjective class, and a Vietnamese particle can
+ * be an adverb, conjunction or interjection elsewhere. The first entry is always the same part of speech.
  */
 export const COMPATIBLE_POS: Record<string, string[]> = {
   noun: ['noun', 'name', 'phrase'],
-  verb: ['verb', 'particle', 'phrase'],
+  name: ['name', 'noun'],
+  verb: ['verb', 'particle', 'phrase', 'adj'],
   adj: ['adj', 'verb', 'phrase'],
-  adv: ['adv', 'particle', 'phrase', 'prep_phrase'],
+  adv: ['adv', 'particle', 'phrase', 'prep_phrase', 'adj'],
   pron: ['pron', 'noun', 'det'],
   det: ['det', 'article', 'num', 'pron', 'particle', 'classifier'],
   article: ['article', 'det', 'num', 'particle', 'classifier'],
   prep: ['prep', 'postp', 'verb', 'adv', 'particle'],
+  postp: ['postp', 'prep', 'particle'],
   conj: ['conj', 'particle', 'adv'],
   intj: ['intj', 'particle', 'phrase'],
+  particle: ['particle', 'adv', 'verb', 'intj', 'conj', 'det', 'prep'],
+  classifier: ['classifier', 'noun', 'det'],
   num: ['num', 'det'],
-  phrase: ['phrase', 'verb', 'adv', 'prep_phrase'],
+  contraction: ['contraction', 'verb', 'phrase', 'pron', 'adv'],
+  phrase: ['phrase', 'verb', 'adv', 'prep_phrase', 'noun', 'intj'],
   prep_phrase: ['prep_phrase', 'phrase', 'adv'],
+  prefix: ['prefix'],
+  suffix: ['suffix'],
 }
 
-/** The parts of speech to search in another language for an English part of speech. */
-export function compatiblePos(englishPos: string): string[] {
-  return COMPATIBLE_POS[englishPos] ?? [englishPos]
+/** The parts of speech to search in another language for a part of speech (from any language). */
+export function compatiblePos(pos: string): string[] {
+  return COMPATIBLE_POS[pos] ?? [pos]
 }

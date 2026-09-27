@@ -33,11 +33,11 @@ const LABEL_PENALTY = (h: Hit) =>
 export type LoadJson = (path: string) => Promise<unknown>
 
 export type DictionaryOptions = {
-  /** ISO 639 code of a published data package, e.g. "vi" for language-dialects-library-vi. */
+  /** ISO 639 code of a published data package, e.g. "vi" for which-dialect-tool-vi. */
   lang: string
   /**
    * Where the data folder is served. Defaults to the data package on jsDelivr, so nothing has to be
-   * bundled: https://cdn.jsdelivr.net/npm/language-dialects-library-<lang>@<DATA_VERSION>/data
+   * bundled: https://cdn.jsdelivr.net/npm/which-dialect-tool-<lang>@<DATA_VERSION>/data
    */
   baseUrl?: string
   /** Custom loader instead of fetch, e.g. reading from disk in Node. Overrides baseUrl. */
@@ -70,15 +70,32 @@ export type Dictionary = {
   searchEnglish(term: string, options?: SearchOptions): Promise<Hit[]>
 }
 
+/**
+ * The regions a region or region-group name stands for (e.g. Spanish "Latin America" -> its countries),
+ * or null when no region is given. Throws for names the language doesn't have, listing the valid ones.
+ */
+export function resolveRegion(meta: LanguageMeta, region: string | undefined): Set<string> | null {
+  if (!region) return null
+  const members = meta.regions.includes(region) ? [region] : meta.regionGroups?.[region]
+  if (!members) {
+    const groups = Object.keys(meta.regionGroups ?? {})
+    throw new Error(
+      `which-dialect-tool: "${region}" isn't a ${meta.name} region or group ` +
+        `(regions: ${meta.regions.join(', ')}${groups.length ? `; groups: ${groups.join(', ')}` : ''})`,
+    )
+  }
+  return new Set(members)
+}
+
 export function dataUrl(lang: string): string {
-  return `https://cdn.jsdelivr.net/npm/language-dialects-library-${lang}@${DATA_VERSION}/data`
+  return `https://cdn.jsdelivr.net/npm/which-dialect-tool-${lang}@${DATA_VERSION}/data`
 }
 
 function fetchLoader(baseUrl: string): LoadJson {
   const base = baseUrl.replace(/\/+$/, '')
   return async (path) => {
     const res = await fetch(`${base}/${path}`)
-    if (!res.ok) throw new Error(`language-dialects-library: couldn't load ${base}/${path} (${res.status})`)
+    if (!res.ok) throw new Error(`which-dialect-tool: couldn't load ${base}/${path} (${res.status})`)
     return res.json()
   }
 }
@@ -122,19 +139,7 @@ export function createDictionary(options: DictionaryOptions): Dictionary {
       const key = normalizeEnglish(term)
       if (!key) return []
       const m = await meta()
-      // A region, or a group standing for all its regions.
-      let wanted: Set<string> | null = null
-      if (region) {
-        const members = m.regions.includes(region) ? [region] : m.regionGroups?.[region]
-        if (!members) {
-          const groups = Object.keys(m.regionGroups ?? {})
-          throw new Error(
-            `language-dialects-library: "${region}" isn't a ${m.name} region or group ` +
-              `(regions: ${m.regions.join(', ')}${groups.length ? `; groups: ${groups.join(', ')}` : ''})`,
-          )
-        }
-        wanted = new Set(members)
-      }
+      const wanted = resolveRegion(m, region)
       const inWanted = (h: Hit) => !wanted || h.regions.some((r) => wanted.has(r))
       const hits = ((await shard<EnglishShard>('en', key))?.[key] ?? []).map((h) => fromStored(h, m.regions))
       const excluded = new Set(exclude)

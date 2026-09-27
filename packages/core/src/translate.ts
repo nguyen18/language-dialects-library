@@ -1,92 +1,87 @@
-// Translating English words with their part of speech and meaning in mind, using the English data
-// package alongside a target language. See README "Translating with context".
+// Translating between any two languages and dialects, meaning by meaning.
+//
+// Every language's data defines its words in English (Wiktionary glosses), so English is the bridge:
+// a source word's senses each give English terms ("guagua" -> "bus"), and the target language is searched
+// for those terms with a compatible part of speech, in the target region. Each source sense is translated
+// on its own, so a word's meanings don't get mixed up ("cool" the temperature vs. "cool" the compliment).
 
 import { compatiblePos } from './pos.ts'
-import { normalizeEnglish, type Hit } from './types.ts'
-import { createDictionary, DEFAULT_EXCLUDED_LABELS, type Dictionary, type DictionaryOptions } from './index.ts'
+import { glossTerms, normalizeEnglish, type Hit, type LanguageMeta } from './types.ts'
+import {
+  createDictionary,
+  DEFAULT_EXCLUDED_LABELS,
+  resolveRegion,
+  type Dictionary,
+  type LoadJson,
+} from './index.ts'
 
-/** One reading of an English word: a base word and part of speech, with its English meanings. */
-export type EnglishReading = {
-  /** The base word the reading is about, e.g. "say" for "said", "though" for "tho". */
+/** One meaning of the source word, with its own part of speech and definitions. */
+export type SourceSense = {
+  /** The word as given. */
+  word: string
+  /** The word this sense belongs to: the base form or standard spelling ("say" for "said", "không" for "hông"). */
   lemma: string
   pos: string
-  /** English definitions of this reading, most common first. */
+  /** English definitions of this sense. */
   glosses: string[]
-  /** How the typed word relates to the lemma when they differ, e.g. "simple past of say". */
+  regions: string[]
+  regionTagged: boolean
+  labels: string[]
+  /** How `word` leads to `lemma` when they differ, e.g. "simple past of say" or "Southern Vietnam form of không". */
   via?: string
-  /** true when every English meaning of this reading is informal, slang, dialectal, rare or nonstandard. */
-  marginal: boolean
+  /** Same-language words with this meaning (often other dialects' words). */
+  synonyms?: string[]
 }
 
-export type TranslationGroup = EnglishReading & {
-  /** Ways to say this reading in the target language, best first. */
-  hits: Hit[]
+/** A target-language word for a source sense. */
+export type Translation = Hit & {
+  /** Higher is better. Comparable within one group. */
+  score: number
+  /** How this word was found: the English term that linked it, or "synonym" for a same-language synonym. */
+  bridge: string
+}
+
+export type TranslationGroup = {
+  source: SourceSense
+  /** English terms used to bridge this sense, main meaning first. */
+  bridge: string[]
+  /** Best first. */
+  translations: Translation[]
 }
 
 export type TranslateOptions = {
-  /** Region or region group of the target language, e.g. "Southern" or "Latin America". */
-  region?: string
-  /** Only this English part of speech, e.g. "verb" for "can" (be able to) rather than "noun" (a tin). */
+  /** Source language code, e.g. "es". */
+  from: string
+  /** Target language code, e.g. "vi". Can equal `from` to translate between dialects of one language. */
+  to: string
+  /** Region or region group the source word is from, e.g. "Mexico". Keeps only senses used there. */
+  fromRegion?: string
+  /** Region or region group to translate into, e.g. "Southern". Words tagged for it rank first. */
+  toRegion?: string
+  /** Only source senses with this part of speech. */
   pos?: string
-  /**
-   * Words describing the meaning you want, e.g. "awesome" for "cool". Readings and results whose
-   * definitions share these words rank first ("cool (awesome; great)" over "cool" as in temperature).
-   */
+  /** Words describing the meaning you want, e.g. "awesome" for "cool". Matching senses and words rank first. */
   meaning?: string
-  /** Labels to leave out of results (default DEFAULT_EXCLUDED_LABELS). */
+  /** Labels to leave out of translations (default DEFAULT_EXCLUDED_LABELS). */
   exclude?: string[]
-  /** Maximum results per reading (default 5). */
+  /** Maximum translations per source sense (default 5). */
   limit?: number
 }
 
 export type Translator = {
-  /** The readings of an English word, following forms and spellings to base words. */
-  readings(term: string): Promise<EnglishReading[]>
-  /** Translations grouped by English reading, in the English dictionary's order (or best match for `meaning` first). */
-  translate(term: string, options?: TranslateOptions): Promise<TranslationGroup[]>
+  /** The senses of a word, following forms and variant spellings to the words they belong to. */
+  senses(word: string, options: { from: string; fromRegion?: string; pos?: string }): Promise<SourceSense[]>
+  /** Translations grouped by source sense, most relevant sense first. */
+  translate(word: string, options: TranslateOptions): Promise<TranslationGroup[]>
 }
 
-export type TranslatorOptions = Omit<DictionaryOptions, 'lang'> & {
-  /** Target language code, e.g. "vi" or "es". */
-  lang: string
-  /** The English dictionary; created with the same loading options if omitted. */
-  english?: Dictionary
-  /** The target dictionary; created from `lang` if omitted. */
-  target?: Dictionary
-}
-
-// Words too common to say anything about a meaning.
-const STOPWORDS = new Set(
-  'a an the to of or and in on for with by as at from that this be is are it its used use any some one something someone very more most'.split(' '),
-)
-
-function words(text: string): Set<string> {
-  return new Set(
-    text
-      .toLowerCase()
-      .split(/[^a-z']+/)
-      .filter((w) => w.length > 2 && !STOPWORDS.has(w)),
-  )
-}
-
-function overlap(a: Set<string>, text: string): number {
-  let n = 0
-  for (const w of words(text)) if (a.has(w)) n++
-  return n
-}
-
-// Search terms from English definitions, for readings the target has no direct match for:
-// "(modal) To be able to; may" -> ["be able to", "may"].
-function termsFromGlosses(glosses: string[]): string[] {
-  const terms: string[] = []
-  for (const g of glosses.slice(0, 3)) {
-    const cleaned = g.replace(/\([^)]*\)/g, ' ').replace(/[.“”"]/g, '')
-    for (const part of cleaned.split(/[;,]/)) {
-      const t = normalizeEnglish(part)
-      if (t && t.split(' ').length <= 4 && /^[a-z][a-z' -]*$/.test(t)) terms.push(t)
-    }
-  }
-  return [...new Set(terms)]
+export type TranslatorOptions = {
+  /** Returns the dictionary for a language. Defaults to createDictionary with the options below. */
+  dictionary?: (lang: string) => Dictionary
+  /** Where each language's data is served (see DictionaryOptions.baseUrl). */
+  baseUrl?: (lang: string) => string
+  /** Custom loader per language (see DictionaryOptions.load). */
+  load?: (lang: string) => LoadJson
 }
 
 /**
@@ -113,118 +108,337 @@ export function regularBaseForms(word: string): string[] {
   return out
 }
 
-// Readings whose English meanings all carry these labels rank after mainstream readings.
-const MARGINAL_LABELS = new Set(['informal', 'slang', 'colloquial', 'dialectal', 'rare', 'nonstandard', 'Internet', 'humorous'])
+// Base-form rules for languages whose data leaves regular forms out.
+const BASE_FORMS: Record<string, (word: string) => string[]> = { en: regularBaseForms }
 
-// A variant sense whose gloss points at another word ("plural of cat", "misspelling of don't",
-// "contraction of going to") rather than defining it. Variants with their own definition are kept.
+// A variant sense whose gloss points at another word ("simple past of say", "misspelling of don't",
+// "Southern Vietnam form of không") rather than defining it. Variants with their own definition are kept.
 const FORM_GLOSS = /\b(of|for)\b/
 
-export function createTranslator(options: TranslatorOptions): Translator {
-  const { lang, english: givenEnglish, target: givenTarget, ...loading } = options
-  const english = givenEnglish ?? createDictionary({ ...loading, lang: 'en' })
-  const target = givenTarget ?? createDictionary({ ...loading, lang })
+// Senses whose labels are all in this set rank after mainstream senses.
+const MARGINAL_LABELS = new Set(['informal', 'slang', 'colloquial', 'dialectal', 'rare', 'nonstandard', 'Internet', 'humorous'])
+const LABEL_PENALTY = new Set(['slang', 'Internet', 'humorous', 'literary', 'dialectal', 'uncommon', 'rare', 'euphemistic'])
 
-  async function readings(term: string, depth = 0, via?: string): Promise<EnglishReading[]> {
-    const word = term.trim()
-    const entries = [...(await english.lookup(word)), ...(word !== word.toLowerCase() ? await english.lookup(word.toLowerCase()) : [])]
-    // Maybe a regular form ("walked", "running"): its base word is read too, after the word's own
-    // entries ("running" the adjective, then "run"). Of the candidates the dictionary knows, the one with
-    // the most senses wins, so "running" -> "run" beats the obscure "runn".
+// Register: a polite source word should translate to a polite word, a casual one to a casual one.
+const POLITE = new Set(['polite', 'formal', 'honorific', 'literary'])
+const CASUAL = new Set(['informal', 'colloquial', 'slang', 'familiar', 'vulgar', 'Internet'])
+function register(labels: string[]): 'polite' | 'casual' | null {
+  if (labels.some((l) => POLITE.has(l))) return 'polite'
+  if (labels.some((l) => CASUAL.has(l))) return 'casual'
+  return null
+}
+function registerFit(source: string[], target: string[]): number {
+  const a = register(source)
+  const b = register(target)
+  if (!a || !b) return 0
+  return a === b ? 1 : -2
+}
+
+// Words too common to say anything about a meaning.
+const STOPWORDS = new Set(
+  ('a an the to of or and in on for with by as at from that this be is are was it its used use any some one ' +
+    'something someone very more most usually especially often also who which what when being having into').split(' '),
+)
+
+function contentWords(text: string): Set<string> {
+  return new Set(
+    text
+      .toLowerCase()
+      .replace(/[^a-z' ]+/g, ' ')
+      .split(' ')
+      .filter((w) => w.length > 2 && !STOPWORDS.has(w)),
+  )
+}
+
+function overlap(a: Set<string>, text: string): number {
+  let n = 0
+  for (const w of contentWords(text)) if (a.has(w)) n++
+  return n
+}
+
+function intersects(regions: string[], wanted: Set<string> | null): boolean {
+  return !wanted || regions.some((r) => wanted.has(r))
+}
+
+/**
+ * English terms that carry a sense's meaning: for English, the word itself first and its synonyms last
+ * ("lift" -> "elevator"); then the terms in its definitions.
+ */
+function bridgeTerms(sense: SourceSense, from: string): string[] {
+  const terms: string[] = []
+  if (from === 'en') terms.push(normalizeEnglish(sense.lemma))
+  for (const gloss of sense.glosses.slice(0, 2)) for (const [term] of glossTerms(gloss)) terms.push(term)
+  if (from === 'en') for (const syn of sense.synonyms ?? []) terms.push(normalizeEnglish(syn))
+  return [...new Set(terms)].slice(0, 8)
+}
+
+export function createTranslator(options: TranslatorOptions = {}): Translator {
+  const cache = new Map<string, Dictionary>()
+  const dict = (lang: string) => {
+    let d = cache.get(lang)
+    if (!d) {
+      d = options.dictionary?.(lang) ?? createDictionary({ lang, baseUrl: options.baseUrl?.(lang), load: options.load?.(lang) })
+      cache.set(lang, d)
+    }
+    return d
+  }
+
+  async function collectSenses(
+    lang: string,
+    word: string,
+    depth: number,
+    via: string | undefined,
+    inherit: string[] | undefined,
+  ): Promise<SourceSense[]> {
+    const d = dict(lang)
+    const w = word.trim()
+    const entries = [...(await d.lookup(w)), ...(w !== w.toLowerCase() ? await d.lookup(w.toLowerCase()) : [])]
+    // A regular form ("walked", "running") is also read as its base word, after the word's own entries.
+    // Of the candidates the dictionary knows, the one with the most senses wins ("running" -> "run", not "runn").
     let base: { word: string; entries: typeof entries } | null = null
-    if (depth === 0) {
+    const rules = BASE_FORMS[lang]
+    if (rules && depth === 0) {
       let best = 0
-      for (const candidate of regularBaseForms(word)) {
-        const found = await english.lookup(candidate)
-        const senses = found.reduce((n, e) => n + e.senses.length, 0)
-        if (senses > best) {
-          best = senses
+      for (const candidate of rules(w)) {
+        const found = await d.lookup(candidate)
+        const count = found.reduce((n, e) => n + e.senses.length, 0)
+        if (count > best) {
+          best = count
           base = { word: candidate, entries: found }
         }
       }
     }
-    const result: EnglishReading[] = []
-    const byKey = new Map<string, EnglishReading>()
-    const add = (r: EnglishReading) => {
-      const key = `${r.lemma}\u0000${r.pos}`
-      const existing = byKey.get(key)
-      if (existing) {
-        existing.glosses.push(...r.glosses.filter((g) => !existing.glosses.includes(g)))
-        existing.marginal &&= r.marginal
-      }
-      else {
-        byKey.set(key, r)
-        result.push(r)
-      }
-    }
+
+    const out: SourceSense[] = []
     const sources = [
       ...entries.map((entry) => ({ entry, via })),
       ...(base?.entries ?? []).map((entry) => ({ entry, via: via ?? `form of ${base!.word}` })),
     ]
-    for (const { entry, via } of sources) {
+    for (const { entry, via: entryVia } of sources) {
       for (const sense of entry.senses) {
-        // A sense that points at another word ("simple past of say", "misspelling of don't"): follow it,
-        // at most two hops (dont -> don't -> do not).
+        // Follow variants to the word they belong to (at most two hops: dont -> don't -> do not). A tagged
+        // variant keeps its region: "hông" is Southern even though "không" is used everywhere.
         if (sense.altOf && depth < 2 && FORM_GLOSS.test(sense.glosses[0] ?? '')) {
-          for (const r of await readings(sense.altOf, depth + 1, via ?? sense.glosses[0])) add(r)
+          const followed = await collectSenses(
+            lang,
+            sense.altOf,
+            depth + 1,
+            entryVia ?? sense.glosses[0],
+            sense.regionTagged ? sense.regions : inherit,
+          )
+          // Prefer the same part of speech: the pronoun "tui" takes the pronoun senses of "tôi".
+          const same = followed.filter((f) => f.pos === entry.pos)
+          out.push(...(same.length ? same : followed))
           continue
         }
-        add({
+        out.push({
+          word: w,
           lemma: entry.word,
           pos: entry.pos,
-          glosses: [...sense.glosses],
-          marginal: sense.labels.some((l) => MARGINAL_LABELS.has(l)),
-          ...(via ? { via } : {}),
+          glosses: sense.glosses,
+          regions: inherit ?? sense.regions,
+          regionTagged: inherit ? true : sense.regionTagged,
+          labels: sense.labels,
+          ...(entryVia ? { via: entryVia } : {}),
+          ...(sense.synonyms ? { synonyms: sense.synonyms } : {}),
         })
       }
     }
-    return result
+    // The same sense reached twice (e.g. through two spellings) is kept once.
+    const seen = new Set<string>()
+    return out
+      .map((s) => ({ ...s, word: w }))
+      .filter((s) => {
+        const key = `${s.lemma}\u0000${s.pos}\u0000${s.glosses[0]}`
+        return !seen.has(key) && seen.add(key)
+      })
+  }
+
+  async function senses(word: string, { from, fromRegion, pos }: { from: string; fromRegion?: string; pos?: string }) {
+    const wanted = resolveRegion(await dict(from).meta(), fromRegion)
+    return (await collectSenses(from, word, 0, undefined, undefined)).filter(
+      (s) => intersects(s.regions, wanted) && (!pos || s.pos === pos),
+    )
+  }
+
+  // English target: the bridge terms are English words already. Keep those the English dictionary has
+  // with a compatible part of speech and used in the target region, plus regional words for them
+  // ("truck" in the UK -> "lorry").
+  async function englishCandidates(
+    term: string,
+    posList: string[],
+    toMeta: LanguageMeta,
+    toRegion: string | undefined,
+    exclude: string[],
+  ): Promise<Hit[]> {
+    const en = dict('en')
+    const wanted = resolveRegion(toMeta, toRegion)
+    const hits: Hit[] = []
+    for (const entry of await en.lookup(term)) {
+      if (!posList.includes(entry.pos)) continue
+      const index = entry.senses.findIndex(
+        (s) => !s.altOf && intersects(s.regions, wanted) && !s.labels.some((l) => exclude.includes(l)),
+      )
+      if (index < 0) continue
+      const s = entry.senses[index]
+      hits.push({
+        word: entry.word,
+        pos: entry.pos,
+        gloss: s.glosses[0],
+        regions: s.regions,
+        regionTagged: s.regionTagged,
+        labels: s.labels,
+        senseIndex: index,
+        senses: entry.senses.length,
+        primary: true,
+      })
+    }
+    if (toRegion) hits.push(...(await en.searchEnglish(term, { region: toRegion, pos: posList, exclude, limit: 10 })))
+    return hits
+  }
+
+  // Translating between dialects of one language: the sense's synonyms are candidates themselves
+  // ("ngô" -> "bắp"). Each is looked up for its sense closest to the source meaning, and kept if it's
+  // used in the target region.
+  async function synonymCandidates(
+    sense: SourceSense,
+    lang: string,
+    posList: string[],
+    wanted: Set<string> | null,
+    exclude: string[],
+    context: Set<string>,
+  ): Promise<Hit[]> {
+    const hits: Hit[] = []
+    for (const syn of sense.synonyms ?? []) {
+      let best: { hit: Hit; fit: number } | null = null
+      for (const entry of await dict(lang).lookup(syn)) {
+        if (!posList.includes(entry.pos)) continue
+        entry.senses.forEach((s, index) => {
+          if (s.altOf || !intersects(s.regions, wanted) || s.labels.some((l) => exclude.includes(l))) return
+          // Prefer the sense that lists the source word back, then the one whose definition overlaps most.
+          const fit = (s.synonyms?.includes(sense.lemma) ? 5 : 0) + overlap(context, s.glosses.join(' ')) - index * 0.1
+          if (!best || fit > best.fit) {
+            best = {
+              fit,
+              hit: {
+                word: entry.word, pos: entry.pos, gloss: s.glosses[0], regions: s.regions, regionTagged: s.regionTagged,
+                labels: s.labels, senseIndex: index, senses: entry.senses.length, primary: index === 0,
+              },
+            }
+          }
+        })
+      }
+      if (best) hits.push((best as { hit: Hit }).hit)
+    }
+    return hits
   }
 
   return {
-    readings: (term) => readings(term),
+    senses,
 
-    async translate(term, { region, pos, meaning, exclude = DEFAULT_EXCLUDED_LABELS, limit = 5 } = {}) {
-      let found = await readings(term)
-      // Words the English dictionary doesn't know are still searched directly.
-      if (found.length === 0) found = [{ lemma: normalizeEnglish(term), pos: '', glosses: [], marginal: false }]
-      if (pos) found = found.filter((r) => r.pos === pos)
-      const wanted = meaning ? words(meaning) : null
+    async translate(word, { from, to, fromRegion, toRegion, pos, meaning, exclude = DEFAULT_EXCLUDED_LABELS, limit = 5 }) {
+      const [sourceSenses, toMeta] = await Promise.all([senses(word, { from, fromRegion, pos }), dict(to).meta()])
+      const toWanted = resolveRegion(toMeta, toRegion)
+      const meaningWords = meaning ? contentWords(meaning) : null
 
       const groups: TranslationGroup[] = []
-      for (const reading of found) {
-        const search = (t: string, p?: string[]) =>
-          target.searchEnglish(t, { region, pos: p, exclude, limit: 30 })
-        const posFilter = reading.pos ? compatiblePos(reading.pos) : undefined
-        let hits = await search(reading.lemma, posFilter)
-        // No direct match: try the terms in its English definitions ("can" -> "be able to").
-        if (hits.length === 0) {
-          for (const t of termsFromGlosses(reading.glosses)) {
-            hits = await search(t, posFilter)
-            if (hits.length) break
+      for (const sense of sourceSenses) {
+        const bridge = bridgeTerms(sense, from)
+        if (bridge.length === 0) continue
+        const posList = compatiblePos(sense.pos)
+        const context = contentWords(`${sense.glosses.join(' ')} ${meaning ?? ''}`)
+        const scored = new Map<string, Translation>()
+        const keep = (hit: Hit, score: number, bridgeTerm: string) => {
+          const existing = scored.get(hit.word)
+          if (!existing || existing.score < score) scored.set(hit.word, { ...hit, score, bridge: bridgeTerm })
+        }
+
+        if (to === from) {
+          for (const hit of await synonymCandidates(sense, to, posList, toWanted, exclude, context)) {
+            if (hit.word === sense.lemma) continue
+            // A synonym is a direct equivalent, so it starts ahead of words found through English.
+            keep(
+              hit,
+              5 + (toWanted && hit.regionTagged ? 3 : 0) + Math.min(hit.senses, 10) * 0.05 +
+                registerFit(sense.labels, hit.labels) -
+                hit.labels.filter((l) => LABEL_PENALTY.has(l)).length * 0.5,
+              'synonym',
+            )
           }
         }
-        if (wanted) {
-          const score = (h: Hit) => overlap(wanted, h.gloss)
-          hits = hits.map((h, i) => ({ h, i, s: score(h) })).sort((a, b) => b.s - a.s || a.i - b.i).map((x) => x.h)
+
+        for (const [termIndex, term] of bridge.entries()) {
+          // The term's own words say nothing about which meaning matched, so they don't count as overlap.
+          const termWords = contentWords(term)
+          const ctx = new Set([...context].filter((w) => !termWords.has(w)))
+          const hits =
+            to === 'en'
+              ? await englishCandidates(term, posList, toMeta, toRegion, exclude)
+              : await dict(to).searchEnglish(term, { region: toRegion, pos: posList, exclude, limit: 25 })
+          hits.forEach((hit, rank) => {
+            // Translating between dialects of one language: the word itself only counts if it's tagged for the target region.
+            if (to === from && hit.word === sense.lemma && toWanted && !hit.regionTagged) return
+            // A word found through a secondary sense ("borona": millet, and also corn) is a weaker match
+            // than one whose main sense is the bridge term ("maíz": corn).
+            const score =
+              3 * overlap(ctx, hit.gloss) +
+              (termIndex === 0 ? 2 : termIndex === 1 ? 1 : 0) +
+              (hit.primary ? 1 : 0) +
+              (toWanted && hit.regionTagged && intersects(hit.regions, toWanted) ? 2 : 0) +
+              (hit.pos === sense.pos ? 0.5 : 0) +
+              Math.min(hit.senses, 10) * 0.05 -
+              Math.min(hit.senseIndex, 4) * 0.4 +
+              registerFit(sense.labels, hit.labels) -
+              hit.labels.filter((l) => LABEL_PENALTY.has(l)).length * 0.5 -
+              rank * 0.1
+            keep(hit, score, term)
+          })
         }
-        const seen = new Set<string>()
-        hits = hits.filter((h) => !seen.has(h.word) && seen.add(h.word)).slice(0, limit)
-        // Skip readings that add nothing new (a variant spelling with the same results as an earlier one).
-        const key = hits.map((h) => h.word).join('\u0000')
-        if (hits.length && !groups.some((g) => g.hits.map((h) => h.word).join('\u0000') === key)) {
-          groups.push({ ...reading, hits })
+        // Nothing matched a whole term: try the last word of phrases ("fresh ear of corn" -> "corn"), scored lower.
+        if (scored.size === 0) {
+          const heads = [...new Set(bridge.filter((t) => t.includes(' ')).map((t) => t.split(' ').pop()!))]
+          for (const head of heads.filter((h) => h.length > 2 && !STOPWORDS.has(h))) {
+            const hits =
+              to === 'en'
+                ? await englishCandidates(head, posList, toMeta, toRegion, exclude)
+                : await dict(to).searchEnglish(head, { region: toRegion, pos: posList, exclude, limit: 10 })
+            hits.forEach((hit, rank) => keep(hit, 1 + (hit.primary ? 1 : 0) + (toWanted && hit.regionTagged ? 1 : 0) - rank * 0.1, head))
+          }
         }
+
+        // Within one language, a candidate that lists the source word as a synonym is a direct
+        // equivalent even when the source doesn't list it back ("dạ" lists "vâng").
+        if (to === from) {
+          const top = [...scored.values()].sort((a, b) => b.score - a.score).slice(0, 10)
+          for (const t of top) {
+            const reverse = (await dict(to).lookup(t.word)).some((e) => e.senses.some((s) => s.synonyms?.includes(sense.lemma)))
+            if (reverse && t.bridge !== 'synonym') scored.set(t.word, { ...t, score: t.score + 4, bridge: 'synonym' })
+          }
+        }
+
+        const translations = [...scored.values()].sort((a, b) => b.score - a.score).slice(0, limit)
+        if (translations.length) groups.push({ source: sense, bridge, translations })
       }
 
-      // Readings whose English definitions match the meaning come first; then mainstream readings
-      // before informal/slang ones; otherwise the English dictionary's order.
-      const score = (g: TranslationGroup) =>
-        wanted ? overlap(wanted, g.glosses.join(' ')) + overlap(wanted, g.hits[0]?.gloss ?? '') : 0
-      return groups
-        .map((g, i) => ({ g, i, s: score(g) }))
-        .sort((a, b) => b.s - a.s || Number(a.g.marginal) - Number(b.g.marginal) || a.i - b.i)
+      // Most relevant sense first: one matching `meaning`; then one tagged for the source region (the
+      // regional sense is what makes the word worth asking about); then mainstream before slang;
+      // otherwise the dictionary's order. Pass `pos` or `meaning` when you know the sense you want.
+      // Translation scores aren't used to order senses: definition overlap inflates minor senses
+      // ("coche": carriage, coach), so the dictionary's order (main meanings first) decides.
+      const relevance = (g: TranslationGroup) =>
+        (meaningWords ? 10 * overlap(meaningWords, g.source.glosses.join(' ')) : 0) +
+        (fromRegion && g.source.regionTagged ? 3 : 0) -
+        (g.source.labels.length && g.source.labels.every((l) => MARGINAL_LABELS.has(l)) ? 1 : 0)
+      const ordered = groups
+        .map((g, i) => ({ g, i, r: relevance(g) }))
+        .sort((a, b) => b.r - a.r || a.i - b.i)
         .map((x) => x.g)
+      // Senses that translate to the same words add nothing; keep the first.
+      const seen = new Set<string>()
+      return ordered.filter((g) => {
+        const key = g.translations.slice(0, 3).map((t) => t.word).join('\u0000')
+        return !seen.has(key) && seen.add(key)
+      })
     },
   }
 }

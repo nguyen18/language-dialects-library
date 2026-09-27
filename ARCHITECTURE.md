@@ -1,10 +1,12 @@
-# language-dialects-library — Architecture & Context
+# which-dialect-tool — Architecture & Context
 
 Reference for future sessions/agents. Read this before changing the repo. The user-facing overview is `README.md`.
 
 ## What this is and why
 
-An open-source library for looking up words by **region or dialect**, across many languages (e.g. Spanish *coche* in Spain vs. *carro* in Mexico; Vietnamese *lợn* in the North vs. *heo* in the South). Languages so far: **Vietnamese** (`vi`), **Spanish** (`es`) and **English** (`en`), all added 2026-09-27. English is also the **helper language** for `createTranslator` (owner's request: match the English word's part of speech so the right contextual meaning gets translated). It started as a data source for **Language Helper** (`~/dev/Language-Helper`), which teaches a language by building on how the learner already talks and targets Southern Vietnamese first. The owner (GitHub `nguyen18`) wants this one repo to eventually hold **many languages** behind a single import.
+An open-source library for looking up words by **region or dialect**, across many languages (e.g. Spanish *coche* in Spain vs. *carro* in Mexico; Vietnamese *lợn* in the North vs. *heo* in the South). Languages so far: **Vietnamese** (`vi`), **Spanish** (`es`) and **English** (`en`), all added 2026-09-27. The main feature is `createTranslator`: **any language → any language, any dialect → any dialect** (including dialect → dialect across languages, e.g. Mexican Spanish → Southern Vietnamese), translating **meaning by meaning** with the correct part of speech and definition (owner's requests, 2026-09-27).
+
+Renamed 2026-09-27 from `language-dialects-library` to **`which-dialect-tool`** (owner's choice) before anything was published: npm packages `which-dialect-tool` (API) and `which-dialect-tool-<lang>` (data), GitHub `nguyen18/which-dialect-tool` (GitHub redirects the old URL). It started as a data source for **Language Helper** (`~/dev/Language-Helper`), which teaches a language by building on how the learner already talks and targets Southern Vietnamese first. The owner (GitHub `nguyen18`) wants this one repo to eventually hold **many languages** behind a single import.
 
 Decisions (2026-09-27, with the owner):
 - **Source:** Kaikki.org's JSONL extraction of English Wiktionary (wiktextract). Chosen over the Free Vietnamese Dictionary Project (no dialect tags) and research corpora (sentences, not dictionaries).
@@ -19,10 +21,10 @@ Decisions (2026-09-27, with the owner):
 languages/<lang>.ts          per-language build config (regions, tag → region mapping, filters)
 scripts/build-language.ts    Kaikki JSONL → packages/<lang>/data
 scripts/language-config.ts   LanguageConfig type
-packages/core/               npm "language-dialects-library": the API (src/index.ts), shared types (src/types.ts),
+packages/core/               npm "which-dialect-tool": the API (src/index.ts), shared types (src/types.ts),
                              parts of speech (src/pos.ts), translator (src/translate.ts)
 packages/core/test/          node:test tests (fake-data ranking tests + real-data checks when built)
-packages/<lang>/             npm "language-dialects-library-<lang>": data/ (generated), LICENSE (CC BY-SA 4.0 text), README
+packages/<lang>/             npm "which-dialect-tool-<lang>": data/ (generated), LICENSE (CC BY-SA 4.0 text), README
 .cache/                      downloaded Kaikki files (gitignored)
 ```
 
@@ -55,30 +57,45 @@ Spanish (`languages/es.ts`): regions are 23 **countries** (Spain, Mexico, the Ce
 
 ### Large-language trimming (English)
 
-`LanguageConfig` options added for English (1.49M entries, 3.3 GB): `dropTechnical` (drop entries whose every sense has a Wiktionary `topics` field), `formOfPos` (keep inflection senses only for these POS), `keepFormOf(form, lemma, pos)` (English: drop regular forms via `isRegularForm` in `languages/en.ts`; y→i only after a consonant so *said*/*paid* stay), `dropLabels` (obsolete, archaic), `maxSensesPerEntry` (6), `maxGlossLength` (140), `englishIndex: false` (no en/ index for English yet), `shardLength: 3`, plus `keepWord` ≤ 2 words and `skipPos` (name, symbol, proverb, …). English regions: 15 countries/areas with groups (North America, British Isles, Oceania, South Asia, Southeast Asia, Africa, Commonwealth); local varieties map to their country. Build of 2026-09-27 (Kaikki file dated 2026-09-25): 594,544 entries, 751,515 senses, 35,393 region-tagged (4.7%), 92.5 MB across 9,598 files, npm tarball 20 MB; largest shard ≈184 kB gzipped; ~25 s, ~1.4 GB memory.
+`LanguageConfig` options added for English (1.49M entries, 3.3 GB): `dropTechnical` (drop entries whose every sense has a Wiktionary `topics` field), `formOfPos` (keep inflection senses only for these POS), `keepFormOf(form, lemma, pos)` (English: drop regular forms via `isRegularForm` in `languages/en.ts`; y→i only after a consonant so *said*/*paid* stay), `dropLabels` (obsolete, archaic), `maxSensesPerEntry` (6), `maxGlossLength` (140), `englishIndex: 'regional'` (en/ index of region-tagged senses only, for US ↔ UK etc.), `shardLength: 3`, plus `keepWord` ≤ 2 words and `skipPos` (name, symbol, proverb, …). English regions: 15 countries/areas with groups (North America, British Isles, Oceania, South Asia, Southeast Asia, Africa, Commonwealth); local varieties map to their country. Build of 2026-09-27 (Kaikki file dated 2026-09-25): 594,544 entries, 751,515 senses, 35,393 region-tagged (4.7%), 92.5 MB across 9,598 files, npm tarball 20 MB; largest shard ≈184 kB gzipped; ~25 s, ~1.4 GB memory.
 
 ## API (`packages/core/src/index.ts`)
 
 `createDictionary({ lang, baseUrl?, load? })` → `{ meta, lookup, searchEnglish }`.
-- Default loader: `fetch` from `dataUrl(lang)` = `https://cdn.jsdelivr.net/npm/language-dialects-library-<lang>@<DATA_VERSION>/data`. `DATA_VERSION` is a jsDelivr range (`'0.1'`).
+- Default loader: `fetch` from `dataUrl(lang)` = `https://cdn.jsdelivr.net/npm/which-dialect-tool-<lang>@<DATA_VERSION>/data`. `DATA_VERSION` is a jsDelivr range (`'0.1'`).
 - Every file loads at most once per dictionary (promise cache); failed loads are evicted for retry. Shards not listed in `meta.shards` aren't requested (no 404s).
 - `searchEnglish`: optional `pos` filter (exact POS codes). `region` may be a region or a `regionGroups` name (a group = any of its regions); unknown names throw, listing regions and groups. Then filter out `exclude` labels (default `DEFAULT_EXCLUDED_LABELS`: vulgar, offensive, derogatory, archaic, obsolete, dated, historical, rare, abbreviation) and hits outside the wanted regions; sort by `primary` → tagged for the requested region → label penalty (mild register labels 1, others 2) → `senses` (more = more common) → `senseIndex`; one hit per word; `limit` (10). Unknown region throws.
 
 ## Parts of speech (`src/pos.ts`)
 
-`POS_NAMES` (code → readable name + one-line learner explanation), `posName()`, and `COMPATIBLE_POS`/`compatiblePos()`: which target POS can translate an English POS (verb → verb/particle/phrase, adj → adj/verb, …), because languages don't align one to one.
+`POS_NAMES` (code → readable name + one-line learner explanation), `posName()`, and `COMPATIBLE_POS`/`compatiblePos()`: which target POS can translate a POS from any language (including Vietnamese particle/classifier) (verb → verb/particle/phrase, adj → adj/verb, …), because languages don't align one to one.
 
 ## Translator (`src/translate.ts`)
 
-`createTranslator({ lang, english?, target?, baseUrl?/load? })` → `{ readings(term), translate(term, { region?, pos?, meaning?, exclude?, limit? }) }`. It imports `createDictionary` from index.ts, and index.ts re-exports it at the end (circular import is fine: only used at call time).
+`createTranslator({ dictionary?, baseUrl?(lang), load?(lang) })` → `{ senses(word, { from, fromRegion?, pos? }), translate(word, { from, to, fromRegion?, toRegion?, pos?, meaning?, exclude?, limit? }) }`. Dictionaries are created per language on demand and cached. translate.ts imports from index.ts and index.ts re-exports it at the end (circular import is fine: only used at call time).
 
-- **readings:** English `lookup` of the term (and lowercase); plus, at the top level, the base word of a regular form from `regularBaseForms()` (candidates like walk/city/run; the one with the **most senses** wins, so *running* → *run*, not the obscure *runn*). Variant senses whose first gloss contains "of"/"for" ("simple past of say", "Misspelling of don't") are followed to their target, up to 2 hops, recording `via`. Readings are merged by (lemma, pos); `marginal` = all its senses are informal/slang/colloquial/dialectal/rare/nonstandard/Internet/humorous.
-- **translate:** per reading, `searchEnglish(lemma, { pos: compatiblePos(pos) })`; if empty, short terms from the first 3 English glosses. With `meaning`, hits are re-ranked by content-word overlap with the hit's gloss (its parentheses carry context: "cool (awesome; great)"), and groups by overlap with English glosses. Groups sort by meaning score → non-marginal first → English dictionary order. Groups with the same hit list as an earlier group are dropped.
-- **Results on the Language Helper top-100 list (Southern Vietnamese, no context):** top pick matched the hand-made list for 27 words (plain search: 23), the hand-made word appeared elsewhere in results for 31 (28), nothing for 6 (20). With `pos`/`meaning`: cool+awesome → ngầu (vi) / chido (es Mexico); just+adv → vừa, chỉ … thôi; still+adv → vẫn; can+verb → biết (not ngũ tạng).
+**English is the bridge:** every language's glosses are English, so any pair works through them.
+
+1. **Source senses** (`collectSenses`): lookup (+ lowercase); for English (`BASE_FORMS.en = regularBaseForms`) also the regular-form base word with the most senses (*running* → *run*, not *runn*), read after the word's own entries. Variant senses whose first gloss contains "of"/"for" are followed (≤ 2 hops, recording `via`), preferring the same POS; a **region-tagged variant passes its region to the senses it leads to** (*hông* → *không*'s senses, but Southern). Deduped by lemma+pos+first gloss. `fromRegion` (region or group via `resolveRegion`) and `pos` filter them.
+2. **Bridge terms** per sense: English source → the lemma first, then `glossTerms` of its first 2 glosses, then its synonyms; other sources → `glossTerms` of the glosses. Max 8.
+3. **Candidates:**
+   - Non-English target: `searchEnglish(term, { region: toRegion, pos: compatiblePos(source.pos) })`.
+   - English target (`englishCandidates`): the term itself if the English dictionary has it with a compatible POS and a sense used in `toRegion`, plus `searchEnglish` on the English **regional** index when `toRegion` is given.
+   - Same language (`to === from`): the source sense's **synonyms**, each looked up for its best-fitting sense (prefers a sense that lists the source back, then definition overlap) and kept if used in `toRegion`. Scored from 5 (+3 if tagged for `toRegion`), ahead of English-bridged words. Then a **reverse check**: top-10 candidates whose senses list the source word as a synonym get +4 (*dạ* lists *vâng*).
+   - Nothing matched a whole term: the last word of multi-word terms, scored low ("fresh ear of corn" → *corn*).
+4. **Scoring** a bridged hit: 3 × definition overlap (content words of the source glosses + `meaning`, minus the term's own words) + term position (2/1/0) + `primary` (1) + tagged for `toRegion` (2) + same POS (0.5) + min(senses, 10) × 0.05 − min(senseIndex, 4) × 0.4 (a word whose main meaning isn't the match: *borona* is mostly "millet") + `registerFit` (polite↔polite / casual↔casual +1, mismatch −2) − 0.5 per slang/literary/… label − rank × 0.1. Best score per word; `limit` per sense. When `to === from` and `toRegion` is set, the source word itself only counts if tagged for the target region.
+5. **Sense order:** `meaning` overlap × 10, +3 if tagged for `fromRegion`, −1 if all its labels are informal/slang/…, then dictionary order. **Translation scores are deliberately not used to order senses:** tried 2026-09-27 and definition overlap inflated minor senses (*coche* "carriage, coach", *chờ* "letter Ch"). A "main POS = most senses" rule was also tried and reverted (Wiktionary gives *dog* the verb and *bố* the pronoun more senses). Senses whose top-3 translations repeat an earlier sense's are dropped.
+
+**Synonyms** (added to the data 2026-09-27): `Sense.synonyms` from Kaikki sense-level `synonyms` (entry-level ones without a sense go to the first sense), max 8. They're Wiktionary's dialect equivalents (vi *ngô* → *bắp*, *lợn* → *heo*; es *coche* → *carro*, *zumo* → *jugo*; en *lift* ↔ *elevator*). ~10% of Vietnamese senses have them. Sizes after: vi 12.5 MB, es 39.5 MB, en 104.3 MB (en also has the regional index: `englishIndex: 'regional'`, 26,909 terms).
+
+## Evaluation (`scripts/evaluate.ts`, `npm run evaluate`)
+
+Known-correct cases; pass = a correct word in the top 3 of the first (most relevant) sense group. `CASES` (tuning set, 75) was used while developing; `HOLDOUT` (30) was written afterwards and **must not be tuned against** (add new holdout cases instead if it gets used). Results 2026-09-27: tuning **73/75 (97%)**, held-out **28/30 (93%)**. Failures: *cerdo* without `pos` (es lists the adjective "dirty" first; with `pos: 'noun'` → heo), held-out *sleep* (en→vi) and *bát* (vi N→S gives *mai*, not *chén*). Progression while tuning: 91% → 93% (synonyms, secondary-sense penalty) → 95% (dictionary order restored) → 97% (reverse synonyms, phrase heads). Unit tests (`npm test`, 24) include translator checks on real data when en, es and vi are built.
 
 ## Known limitations / tuning notes
 
-- Without `pos`/`meaning`, the first reading follows the English dictionary's order, which isn't frequency (e.g. *just* the adjective "fair" before the adverb; *drove* the noun "herd" before the past of *drive*). Callers should pass context.
+- Without `pos`/`meaning`, the first sense follows the dictionary's order, which isn't frequency (e.g. *just* the adjective "fair" before the adverb; *cerdo* "dirty" before "pig"). Callers should pass context.
+- Non-English → non-English goes through English definitions, so distinctions English doesn't make can be lost.
 - Grammar words defined by function ("marks the future tense" for *sẽ*) aren't reachable from English *will*; *will* → *biết*. *gonna*, *would*, *wanna*, *didnt* still return nothing.
 
 - No frequency data; `senses` is a proxy and sometimes wrong (e.g. "wait" ranks rare *dàng* first; "mother" ranks *mẫu* above *mẹ*).
@@ -90,7 +107,7 @@ Spanish (`languages/es.ts`): regions are 23 **countries** (Spain, Mexico, the Ce
 
 ## Publishing (not yet done as of 2026-09-27)
 
-Rebuild each language with `--refresh`, `npm test`, then publish each data package (`npm publish -w language-dialects-library-en`, `-es`, `-vi`) and the API (`npm publish -w language-dialects-library`). Needs `npm login`. `language-dialects-library-es` and `-en` were also free on npm on 2026-09-27. Unscoped names were free on npm on 2026-09-27. Data-only updates: bump the data package's patch version within `DATA_VERSION`'s range.
+Rebuild each language with `--refresh`, `npm test`, then publish each data package (`npm publish -w which-dialect-tool-en`, `-es`, `-vi`) and the API (`npm publish -w which-dialect-tool`). Needs `npm login`. `which-dialect-tool-es` and `-en` were also free on npm on 2026-09-27. Unscoped names were free on npm on 2026-09-27. Data-only updates: bump the data package's patch version within `DATA_VERSION`'s range.
 
 ## Working conventions
 

@@ -1,14 +1,14 @@
 {
-  "name": "language-dialects-library-vi",
+  "name": "which-dialect-tool-vi",
   "version": "0.1.0",
-  "description": "Vietnamese dictionary data with Northern, Central and Southern dialect regions, from Wiktionary via Kaikki.org. Loaded by language-dialects-library.",
+  "description": "Vietnamese dictionary data with Northern, Central and Southern dialect regions, from Wiktionary via Kaikki.org. Loaded by which-dialect-tool.",
   "files": ["data", "LICENSE", "README.md"],
-  "keywords": ["vietnamese", "dictionary", "dialect", "wiktionary", "language-dialects-library"],
+  "keywords": ["vietnamese", "dictionary", "dialect", "wiktionary", "which-dialect-tool"],
   "license": "CC-BY-SA-4.0",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/nguyen18/language-dialects-library.git",
+    "url": "git+https://github.com/nguyen18/which-dialect-tool.git",
     "directory": "packages/vi"
   },
-  "homepage": "https://github.com/nguyen18/language-dialects-library#readme"
+  "homepage": "https://github.com/nguyen18/which-dialect-tool#readme"
 }

@@ -95,7 +95,9 @@ const config: LanguageConfig = {
   dropLabels: ['obsolete', 'archaic'],
   maxSensesPerEntry: 6,
   maxGlossLength: 140,
-  englishIndex: false,
+  // Only regional senses are searchable ("truck" in the UK -> "lorry"); for words used everywhere, the
+  // English word itself is the answer.
+  englishIndex: 'regional',
   shardLength: 3,
 }
 

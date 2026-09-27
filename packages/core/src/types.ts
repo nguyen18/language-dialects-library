@@ -15,6 +15,11 @@ export type Sense = {
   labels: string[]
   /** Set when this sense is a variant of another word, e.g. Vietnamese "hông" is a Southern form of "không". */
   altOf?: string
+  /**
+   * Same-language words with this meaning, from Wiktionary: often the other dialects' words
+   * (Vietnamese "ngô" -> "bắp", Spanish "coche" -> "carro", English "lift" -> "elevator").
+   */
+  synonyms?: string[]
 }
 
 export type Entry = {
@@ -120,4 +125,31 @@ export function normalizeEnglish(term: string): string {
     .replace(/\s+/g, ' ')
     .trim()
     .replace(/^(to|a|an|the) (?=\S)/, '')
+}
+
+// Trailing words dropped to also match the bare verb: "wait for" is found by "wait" too.
+const TRAILING_PARTICLE = / (for|to|at|on|with|about|of|in|into|up|out|off|over)$/
+
+/**
+ * Splits an English gloss into search terms, main meaning first: "now, today, this time" ->
+ * [["now", 0], ["today", 1], ["this time", 2]]. Parenthesized notes and final punctuation are dropped.
+ * When a gloss explains before a colon ("Negates the meaning of the modified verb: not"), only the
+ * part after it is used. Only short, plain phrases (up to 4 words) are kept. Returns [term, position].
+ */
+export function glossTerms(gloss: string): [string, number][] {
+  let cleaned = gloss.replace(/\([^)]*\)/g, ' ').replace(/[“”"]/g, '')
+  if (cleaned.includes(':')) cleaned = cleaned.slice(cleaned.lastIndexOf(':') + 1)
+  const terms: [string, number][] = []
+  let position = 0
+  // "I/me" lists two meanings, like "I; me".
+  for (const part of cleaned.split(/[;,/]/)) {
+    const t = normalizeEnglish(part.replace(/[.!?]+\s*$/, ''))
+    if (!t || t.split(' ').length > 4 || !/^[a-z][a-z' -]*$/.test(t)) continue
+    terms.push([t, position])
+    // The bare verb shares its phrase's position, so "wait" counts as the main meaning of "to wait for".
+    const bare = t.replace(TRAILING_PARTICLE, '')
+    if (bare !== t && bare) terms.push([bare, position])
+    position++
+  }
+  return terms
 }
