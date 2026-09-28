@@ -120,6 +120,7 @@ This is a suggestion tool, not a curated translation dictionary. Check results b
 - **Few region tags.** Most senses carry no region (see the table), so they're assumed to be used everywhere, including some words that are really old-fashioned or local.
 - **No word frequencies.** The source doesn't say how common a word or meaning is. Without `pos`/`meaning`, the first meaning follows the dictionary's order, which isn't always the most common one.
 - **English is the bridge.** Translating between two non-English languages goes through English definitions, so nuance English doesn't mark can be lost.
+- **`meaning` matches words, not ideas.** It compares your words with the dictionary's definitions (and the top translation's), so "awesome" won't find a sense defined as "Fashionable; trendy; hip." Use the definition's own wording, or let users pick from `senses()`.
 - **Grammar words translate poorly.** Words defined by their function ("marks the future tense" for Vietnamese *sẽ*) aren't reached from English *will*; *the*, *is* or *gonna* may give nothing useful.
 - **Base words only for Spanish.** Conjugations and plurals are left out; use *hablar*, not *hablamos*.
 

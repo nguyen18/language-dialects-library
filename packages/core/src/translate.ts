@@ -161,7 +161,10 @@ function register(labels: string[]): 'polite' | 'casual' | null {
 function registerFit(source: string[], target: string[]): number {
   const a = register(source)
   const b = register(target)
-  if (!a || !b) return 0
+  if (!b) return 0
+  // A neutral meaning ("cool" the temperature) prefers neutral words over slang ("chất": cool, informal),
+  // since frequency is per word, not per meaning, and a common word's slang sense can otherwise win.
+  if (!a) return b === 'casual' ? -1.5 : 0
   return a === b ? 1 : -2
 }
 
@@ -492,8 +495,13 @@ export function createTranslator(options: TranslatorOptions = {}): Translator {
       // Translation scores aren't used to order senses: definition overlap inflates minor senses
       // ("coche": carriage, coach), so the dictionary's order (main meanings first) decides.
       const ownSenses = sourceSenses.some((s) => !s.via)
+      // `meaning` is matched against the sense's own definitions, and also against its top translation's
+      // definition: English words the source definition doesn't use can still describe the target word
+      // ("cool": "Fashionable; trendy; hip" never says "awesome", but its translation "guay" is "cool, great").
       const relevance = (g: TranslationGroup) =>
-        (meaningWords ? 10 * overlap(meaningWords, g.source.glosses.join(' ')) : 0) -
+        (meaningWords
+          ? 10 * overlap(meaningWords, g.source.glosses.join(' ')) + 5 * overlap(meaningWords, g.translations[0]?.gloss ?? '')
+          : 0) -
         (ownSenses && g.source.via && SPELLING_VIA.test(g.source.via) ? 2 : 0) +
         (fromRegion && g.source.regionTagged ? 3 : 0) -
         (g.source.labels.length && g.source.labels.every((l) => MARGINAL_LABELS.has(l)) ? 1 : 0)

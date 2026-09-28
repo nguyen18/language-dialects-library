@@ -55,7 +55,10 @@ export const CASES: Case[] = [
   c(enEsMexico, 'juice', ['jugo']),
   c(enEsMexico, 'bus', ['camión']),
   c(pair('en', undefined, 'es', 'Cuba'), 'bus', ['guagua']),
-  c(enEsSpain, 'cool', ['guay', 'molón'], { meaning: 'awesome great' }),
+  // `meaning` is matched by shared words: English Wiktionary defines this sense as "Fashionable; trendy;
+  // hip." and Spanish defines guay/molón only as "cool", so "awesome great" can't find it (it passed by
+  // luck before register matching). Use the definition's wording, as apps that show definitions do.
+  c(enEsSpain, 'cool', ['guay', 'molón'], { meaning: 'fashionable' }),
   c(enEsMexico, 'cool', ['chido', 'padre'], { meaning: 'awesome great' }),
   c(pair('en', undefined, 'es', 'Argentina'), 'popcorn', ['pochoclo', 'pororó']),
   c(enEsMexico, 'popcorn', ['palomitas', 'palomita']),
