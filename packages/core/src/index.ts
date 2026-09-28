@@ -33,11 +33,11 @@ const LABEL_PENALTY = (h: Hit) =>
 export type LoadJson = (path: string) => Promise<unknown>
 
 export type DictionaryOptions = {
-  /** ISO 639 code of a published data package, e.g. "vi" for which-dialect-tool-vi. */
+  /** ISO 639 code of a published data package, e.g. "vi" for which-dialect-vi. */
   lang: string
   /**
    * Where the data folder is served. Defaults to the data package on jsDelivr, so nothing has to be
-   * bundled: https://cdn.jsdelivr.net/npm/which-dialect-tool-<lang>@<DATA_VERSION>/data
+   * bundled: https://cdn.jsdelivr.net/npm/which-dialect-<lang>@<DATA_VERSION>/data
    */
   baseUrl?: string
   /** Custom loader instead of fetch, e.g. reading from disk in Node. Overrides baseUrl. */
@@ -80,7 +80,7 @@ export function resolveRegion(meta: LanguageMeta, region: string | undefined): S
   if (!members) {
     const groups = Object.keys(meta.regionGroups ?? {})
     throw new Error(
-      `which-dialect-tool: "${region}" isn't a ${meta.name} region or group ` +
+      `which-dialect: "${region}" isn't a ${meta.name} region or group ` +
         `(regions: ${meta.regions.join(', ')}${groups.length ? `; groups: ${groups.join(', ')}` : ''})`,
     )
   }
@@ -88,14 +88,14 @@ export function resolveRegion(meta: LanguageMeta, region: string | undefined): S
 }
 
 export function dataUrl(lang: string): string {
-  return `https://cdn.jsdelivr.net/npm/which-dialect-tool-${lang}@${DATA_VERSION}/data`
+  return `https://cdn.jsdelivr.net/npm/which-dialect-${lang}@${DATA_VERSION}/data`
 }
 
 function fetchLoader(baseUrl: string): LoadJson {
   const base = baseUrl.replace(/\/+$/, '')
   return async (path) => {
     const res = await fetch(`${base}/${path}`)
-    if (!res.ok) throw new Error(`which-dialect-tool: couldn't load ${base}/${path} (${res.status})`)
+    if (!res.ok) throw new Error(`which-dialect: couldn't load ${base}/${path} (${res.status})`)
     return res.json()
   }
 }

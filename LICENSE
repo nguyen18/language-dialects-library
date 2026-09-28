@@ -24,5 +24,5 @@ SOFTWARE.
 
 This license covers the code in this repository. The dictionary data in the
 language data packages (packages/<lang>, published as
-which-dialect-tool-<lang>) is derived from Wiktionary and licensed
+which-dialect-<lang>) is derived from Wiktionary and licensed
 separately under CC BY-SA 4.0; see packages/<lang>/LICENSE.

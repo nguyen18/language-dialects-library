@@ -1,9 +1,9 @@
-# which-dialect-tool
+# which-dialect
 
 Translate words **between languages and between dialects**, meaning by meaning: Mexican Spanish *chido* into Southern Vietnamese, Northern Vietnamese *ngô* into Southern *bắp*, Spain's *coche* into Mexico's *carro*, US *truck* into UK *lorry*. Dictionary data comes from [Wiktionary](https://en.wiktionary.org/) (via [Kaikki.org](https://kaikki.org/)) and loads only when you need it.
 
 ```ts
-import { createTranslator } from 'which-dialect-tool'
+import { createTranslator } from 'which-dialect'
 
 const tr = createTranslator()
 
@@ -22,9 +22,9 @@ You install one small package. Dictionary data is **not bundled**: each lookup f
 
 | Language | Code | Data package | Regions | Entries | Region-tagged senses |
 |---|---|---|---|---|---|
-| Spanish | `es` | [`which-dialect-tool-es`](packages/es) | 23 countries, plus groups: Latin America, Central America, Caribbean, South America, Río de la Plata | 123,995 | 11,940 of 153,963 (7.8%) |
-| Vietnamese | `vi` | [`which-dialect-tool-vi`](packages/vi) | Northern, Central, Southern | 35,394 | 1,330 of 42,419 (3.1%) |
-| English | `en` | [`which-dialect-tool-en`](packages/en) | 15 countries/areas (US, UK, Australia, India, …), plus groups: North America, British Isles, Commonwealth, … | 594,544 | 35,393 of 751,515 (4.7%) |
+| Spanish | `es` | [`which-dialect-es`](packages/es) | 23 countries, plus groups: Latin America, Central America, Caribbean, South America, Río de la Plata | 123,995 | 11,940 of 153,963 (7.8%) |
+| Vietnamese | `vi` | [`which-dialect-vi`](packages/vi) | Northern, Central, Southern | 35,394 | 1,330 of 42,419 (3.1%) |
+| English | `en` | [`which-dialect-en`](packages/en) | 15 countries/areas (US, UK, Australia, India, …), plus groups: North America, British Isles, Commonwealth, … | 594,544 | 35,393 of 751,515 (4.7%) |
 
 Every pair of these languages can be translated in both directions, and between any of their regions, including between two dialects of one language.
 
@@ -33,7 +33,7 @@ More languages are planned. Each one is a config file in [`languages/`](language
 ## Install
 
 ```sh
-npm install which-dialect-tool
+npm install which-dialect
 ```
 
 Works in browsers and in Node 18+ (anywhere with `fetch`).
@@ -92,7 +92,7 @@ The held-out misses: English *sleep* (an obscure noun sense is listed first) and
 
 ### `createDictionary({ lang, baseUrl?, load? })`
 
-One language's dictionary. `baseUrl` defaults to `https://cdn.jsdelivr.net/npm/which-dialect-tool-<lang>@0.1/data`.
+One language's dictionary. `baseUrl` defaults to `https://cdn.jsdelivr.net/npm/which-dialect-<lang>@0.1/data`.
 
 - `dictionary.lookup(word)`: all entries for a word, with every sense's definitions, regions, labels, synonyms and variant links (`altOf`).
 - `dictionary.searchEnglish(term, { region?, pos?, exclude?, limit? })`: words for an English term in this language, one per word, best first (no meaning handling: use the translator for that).
@@ -125,12 +125,12 @@ This is a suggestion tool, not a curated translation dictionary. Check results b
 
 ## License and attribution
 
-- **Code** (this repo, and the `which-dialect-tool` package): [MIT](LICENSE).
-- **Data** (the `which-dialect-tool-<code>` packages): derived from Wiktionary via Kaikki.org's [wiktextract](https://github.com/tatuylonen/wiktextract) extraction, modified (filtered and reshaped) by this project, and licensed under [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/).
+- **Code** (this repo, and the `which-dialect` package): [MIT](LICENSE).
+- **Data** (the `which-dialect-<code>` packages): derived from Wiktionary via Kaikki.org's [wiktextract](https://github.com/tatuylonen/wiktextract) extraction, modified (filtered and reshaped) by this project, and licensed under [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/).
 
 If your app **shows** this data, credit it where users can see it, for example:
 
-> Translations from [Wiktionary](https://en.wiktionary.org/), [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/), via which-dialect-tool.
+> Translations from [Wiktionary](https://en.wiktionary.org/), [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/), via which-dialect.
 
 If you **redistribute modified data**, it has to stay under CC BY-SA 4.0. Using the API in your app doesn't change your app's own license. This project isn't affiliated with or endorsed by Wikimedia or Kaikki.org.
 
@@ -162,10 +162,10 @@ Languages in non-Latin scripts (Chinese, Arabic, Russian, …) will need a scrip
 
 ```sh
 npm run build:data -- en --refresh && npm run build:data -- es --refresh && npm run build:data -- vi --refresh && npm test
-npm publish -w which-dialect-tool-en
-npm publish -w which-dialect-tool-es
-npm publish -w which-dialect-tool-vi
-npm publish -w which-dialect-tool
+npm publish -w which-dialect-en
+npm publish -w which-dialect-es
+npm publish -w which-dialect-vi
+npm publish -w which-dialect
 ```
 
 The API loads data versions matching `DATA_VERSION` in `packages/core/src/index.ts` (currently `0.1`). Data-only updates can publish new 0.1.x data versions without touching the API; bump `DATA_VERSION` when the data format changes.

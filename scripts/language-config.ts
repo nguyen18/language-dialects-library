@@ -1,7 +1,7 @@
 // Per-language settings for the build. Each language adds one file in languages/.
 
 export type LanguageConfig = {
-  /** ISO 639 code; also the data package suffix (which-dialect-tool-<lang>). */
+  /** ISO 639 code; also the data package suffix (which-dialect-<lang>). */
   lang: string
   /** English name. */
   name: string

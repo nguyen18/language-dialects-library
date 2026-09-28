@@ -1,4 +1,4 @@
-# which-dialect-tool — Architecture & Context
+# which-dialect — Architecture & Context
 
 Reference for future sessions/agents. Read this before changing the repo. The user-facing overview is `README.md`.
 
@@ -6,7 +6,7 @@ Reference for future sessions/agents. Read this before changing the repo. The us
 
 An open-source library for looking up words by **region or dialect**, across many languages (e.g. Spanish *coche* in Spain vs. *carro* in Mexico; Vietnamese *lợn* in the North vs. *heo* in the South). Languages so far: **Vietnamese** (`vi`), **Spanish** (`es`) and **English** (`en`), all added 2026-09-27. The main feature is `createTranslator`: **any language → any language, any dialect → any dialect** (including dialect → dialect across languages, e.g. Mexican Spanish → Southern Vietnamese), translating **meaning by meaning** with the correct part of speech and definition (owner's requests, 2026-09-27).
 
-Renamed 2026-09-27 from `language-dialects-library` to **`which-dialect-tool`** (owner's choice) before anything was published: npm packages `which-dialect-tool` (API) and `which-dialect-tool-<lang>` (data), GitHub `nguyen18/which-dialect-tool` (GitHub redirects the old URL). It started as a data source for **Language Helper** (`~/dev/Language-Helper`), which teaches a language by building on how the learner already talks and targets Southern Vietnamese first. The owner (GitHub `nguyen18`) wants this one repo to eventually hold **many languages** behind a single import.
+Renamed twice on 2026-09-27, both before anything was published: `language-dialects-library` → `which-dialect-tool` → **`which-dialect`** (owner's choices). npm packages `which-dialect` (API) and `which-dialect-<lang>` (data); GitHub `nguyen18/which-dialect` (GitHub redirects both old URLs); local folder `~/dev/which-dialect`.
 
 Decisions (2026-09-27, with the owner):
 - **Source:** Kaikki.org's JSONL extraction of English Wiktionary (wiktextract). Chosen over the Free Vietnamese Dictionary Project (no dialect tags) and research corpora (sentences, not dictionaries).
@@ -21,10 +21,10 @@ Decisions (2026-09-27, with the owner):
 languages/<lang>.ts          per-language build config (regions, tag → region mapping, filters)
 scripts/build-language.ts    Kaikki JSONL → packages/<lang>/data
 scripts/language-config.ts   LanguageConfig type
-packages/core/               npm "which-dialect-tool": the API (src/index.ts), shared types (src/types.ts),
+packages/core/               npm "which-dialect": the API (src/index.ts), shared types (src/types.ts),
                              parts of speech (src/pos.ts), translator (src/translate.ts)
 packages/core/test/          node:test tests (fake-data ranking tests + real-data checks when built)
-packages/<lang>/             npm "which-dialect-tool-<lang>": data/ (generated), LICENSE (CC BY-SA 4.0 text), README
+packages/<lang>/             npm "which-dialect-<lang>": data/ (generated), LICENSE (CC BY-SA 4.0 text), README
 .cache/                      downloaded Kaikki files (gitignored)
 ```
 
@@ -62,7 +62,7 @@ Spanish (`languages/es.ts`): regions are 23 **countries** (Spain, Mexico, the Ce
 ## API (`packages/core/src/index.ts`)
 
 `createDictionary({ lang, baseUrl?, load? })` → `{ meta, lookup, searchEnglish }`.
-- Default loader: `fetch` from `dataUrl(lang)` = `https://cdn.jsdelivr.net/npm/which-dialect-tool-<lang>@<DATA_VERSION>/data`. `DATA_VERSION` is a jsDelivr range (`'0.1'`).
+- Default loader: `fetch` from `dataUrl(lang)` = `https://cdn.jsdelivr.net/npm/which-dialect-<lang>@<DATA_VERSION>/data`. `DATA_VERSION` is a jsDelivr range (`'0.1'`).
 - Every file loads at most once per dictionary (promise cache); failed loads are evicted for retry. Shards not listed in `meta.shards` aren't requested (no 404s).
 - `searchEnglish`: optional `pos` filter (exact POS codes). `region` may be a region or a `regionGroups` name (a group = any of its regions); unknown names throw, listing regions and groups. Then filter out `exclude` labels (default `DEFAULT_EXCLUDED_LABELS`: vulgar, offensive, derogatory, archaic, obsolete, dated, historical, rare, abbreviation) and hits outside the wanted regions; sort by `primary` → tagged for the requested region → label penalty (mild register labels 1, others 2) → `senses` (more = more common) → `senseIndex`; one hit per word; `limit` (10). Unknown region throws.
 
@@ -112,7 +112,7 @@ Known-correct cases; pass = a correct word in the top 3 of the first (most relev
 
 ## Publishing (not yet done as of 2026-09-27)
 
-Rebuild each language with `--refresh`, `npm test`, then publish each data package (`npm publish -w which-dialect-tool-en`, `-es`, `-vi`) and the API (`npm publish -w which-dialect-tool`). Needs `npm login`. `which-dialect-tool-es` and `-en` were also free on npm on 2026-09-27. Unscoped names were free on npm on 2026-09-27. Data-only updates: bump the data package's patch version within `DATA_VERSION`'s range.
+Rebuild each language with `--refresh`, `npm test`, then publish each data package (`npm publish -w which-dialect-en`, `-es`, `-vi`) and the API (`npm publish -w which-dialect`). Needs `npm login`. `which-dialect-es` and `-en` were also free on npm on 2026-09-27. Unscoped names were free on npm on 2026-09-27. Data-only updates: bump the data package's patch version within `DATA_VERSION`'s range.
 
 ## Working conventions
 

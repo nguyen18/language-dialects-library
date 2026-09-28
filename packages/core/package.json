@@ -1,5 +1,5 @@
 {
-  "name": "which-dialect-tool",
+  "name": "which-dialect",
   "version": "0.1.0",
   "description": "Find how words are said in different regions and dialects of a language (Spanish, Vietnamese, …), with Wiktionary data loaded on demand.",
   "type": "module",
@@ -32,8 +32,8 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/nguyen18/which-dialect-tool.git",
+    "url": "git+https://github.com/nguyen18/which-dialect.git",
     "directory": "packages/core"
   },
-  "homepage": "https://github.com/nguyen18/which-dialect-tool#readme"
+  "homepage": "https://github.com/nguyen18/which-dialect#readme"
 }
