@@ -101,6 +101,8 @@ const config: LanguageConfig = {
   // Only regional senses are searchable ("truck" in the UK -> "lorry"); for words used everywhere, the
   // English word itself is the answer.
   englishIndex: 'regional',
+  // Translation tables for the languages which-dialect has. Add a language's code here when adding it.
+  translationLangs: ['vi', 'es'],
   wordfreq: 'large',
   shardLength: 3,
 }

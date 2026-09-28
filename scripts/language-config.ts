@@ -44,6 +44,12 @@ export type LanguageConfig = {
    * English uses it so "truck" in the UK finds "lorry", without indexing every English word.
    */
   englishIndex?: boolean | 'regional'
+  /**
+   * Keep each sense's Wiktionary translation table for these language codes (English only: other
+   * languages' Wiktionary entries don't have translation tables). Used to boost the usual translation
+   * of each meaning.
+   */
+  translationLangs?: string[]
   /** wordfreq list for ranking common words first ('large' where wordfreq has it). Omit if none. */
   wordfreq?: 'small' | 'large'
   /** Example sentences kept per sense (default 2). */

@@ -22,7 +22,15 @@ export type Sense = {
   synonyms?: string[]
   /** Example sentences from Wiktionary, with an English translation for non-English languages. */
   examples?: Example[]
+  /**
+   * English senses only: Wiktionary's translation table for this meaning, by language code: the words
+   * editors list as the usual translation of exactly this sense, with region/register tags when given
+   * (e.g. car → es: coche [Spain], carro [Mexico, …]).
+   */
+  translations?: Record<string, TableTranslation[]>
 }
+
+export type TableTranslation = { word: string; tags?: string[] }
 
 export type Example = { text: string; translation?: string }
 

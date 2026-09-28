@@ -43,6 +43,7 @@ type KaikkiSense = {
   topics?: string[]
   synonyms?: { word: string }[]
   examples?: { text?: string; translation?: string; english?: string; type?: string }[]
+  translations?: { word?: string; lang_code?: string; code?: string; tags?: string[] }[]
   alt_of?: { word: string }[]
   form_of?: { word: string }[]
 }
@@ -50,6 +51,28 @@ type KaikkiEntry = { word: string; pos: string; senses?: KaikkiSense[]; synonyms
 
 // Synonyms kept per sense; enough for dialect equivalents without bloating large languages.
 const MAX_SYNONYMS = 8
+// Translation-table tags worth keeping: places (capitalized, e.g. Spain, Latin-America) and register.
+// Grammatical tags (masculine, direct-object, …) are dropped.
+const TABLE_REGISTER_TAGS = new Set(['colloquial', 'informal', 'formal', 'polite', 'familiar', 'slang', 'vulgar', 'archaic', 'dated', 'rare', 'literary'])
+const MAX_TABLE_WORDS = 12
+
+function pickTranslations(raw: KaikkiSense['translations'], langs: string[] | undefined): Sense['translations'] {
+  if (!raw?.length || !langs?.length) return undefined
+  const out: NonNullable<Sense['translations']> = {}
+  for (const t of raw) {
+    const lang = t.lang_code ?? t.code
+    if (!lang || !langs.includes(lang) || !t.word) continue
+    // "(leísmo) les" -> "les", "mueble (El Norte)" -> "mueble"; placeholders like "various" are skipped.
+    const word = t.word.replace(/\([^)]*\)/g, ' ').replace(/\s+/g, ' ').trim()
+    if (!word || word === 'various' || word === '-' || word.length > 40) continue
+    const list = (out[lang] ??= [])
+    if (list.length >= MAX_TABLE_WORDS || list.some((x) => x.word === word)) continue
+    const tags = (t.tags ?? []).filter((tag) => /^[A-Z]/.test(tag) || TABLE_REGISTER_TAGS.has(tag))
+    list.push(tags.length ? { word, tags } : { word })
+  }
+  return Object.keys(out).length ? out : undefined
+}
+
 // Longer examples are usually literary quotations, not everyday sentences.
 const MAX_EXAMPLE_LENGTH = 160
 
@@ -122,6 +145,8 @@ async function readEntries(file: string, config: LanguageConfig): Promise<Entry[
       if (synonyms.length) sense.synonyms = synonyms.slice(0, MAX_SYNONYMS)
       const examples = pickExamples(s.examples, config.maxExamples ?? 2)
       if (examples) sense.examples = examples
+      const translations = pickTranslations(s.translations, config.translationLangs)
+      if (translations) sense.translations = translations
       senses.push(sense)
     }
     // Entry-level synonyms (not tied to a sense) belong to the main meaning.

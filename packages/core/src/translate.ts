@@ -6,7 +6,7 @@
 // on its own, so a word's meanings don't get mixed up ("cool" the temperature vs. "cool" the compliment).
 
 import { compatiblePos } from './pos.ts'
-import { glossTerms, normalizeEnglish, type Example, type Hit, type LanguageMeta } from './types.ts'
+import { glossTerms, normalizeEnglish, type Example, type Hit, type LanguageMeta, type TableTranslation } from './types.ts'
 import {
   createDictionary,
   DEFAULT_EXCLUDED_LABELS,
@@ -33,6 +33,8 @@ export type SourceSense = {
   synonyms?: string[]
   /** Example sentences for this meaning. */
   examples?: Example[]
+  /** English senses only: Wiktionary's translation table for this meaning (see Sense.translations). */
+  translations?: Record<string, TableTranslation[]>
 }
 
 /** A target-language word for a source sense. */
@@ -138,6 +140,13 @@ function commonness(hit: { frequency?: number; senses: number }, hasFrequencies:
   if (!hasFrequencies) return Math.min(hit.senses, 10) * 0.05
   return ((hit.frequency ?? RARE_ZIPF - 1) - RARE_ZIPF) * FREQUENCY_WEIGHT
 }
+
+// Wiktionary's translation tables list the usual translation of each English meaning, per language,
+// with region tags (car → es: coche [Spain], carro [Mexico, …]). Being listed for the matched meaning is
+// the strongest evidence a word is the right, common translation.
+const TABLE_BONUS = 4
+const TABLE_REGION_BONUS = 1.5
+const TABLE_OTHER_REGION_PENALTY = 2
 
 // Matches scoring below this are dropped. A real match gets at least ~2 (a main-meaning or first-term match).
 const MIN_SCORE = 1
@@ -289,6 +298,7 @@ export function createTranslator(options: TranslatorOptions = {}): Translator {
           ...(entryVia ? { via: entryVia } : {}),
           ...(sense.synonyms ? { synonyms: sense.synonyms } : {}),
           ...(sense.examples ? { examples: sense.examples } : {}),
+          ...(sense.translations ? { translations: sense.translations } : {}),
         })
       }
     }
@@ -383,6 +393,59 @@ export function createTranslator(options: TranslatorOptions = {}): Translator {
     return hits
   }
 
+  // The translation-table words for a source sense in the target language. English senses carry their
+  // table; for other languages, the English sense whose table lists the source word (in the source
+  // language) is the same meaning, and its target-language list applies.
+  async function tableFor(sense: SourceSense, from: string, to: string, bridge: string[]): Promise<TableTranslation[]> {
+    if (from === 'en') return to === 'en' ? [] : (sense.translations?.[to] ?? [])
+    const found: TableTranslation[] = []
+    const add = (list: TableTranslation[] | undefined) => {
+      for (const t of list ?? []) if (!found.some((f) => f.word === t.word)) found.push(t)
+    }
+    for (const term of bridge.slice(0, 3)) {
+      for (const entry of await dict('en').lookup(term)) {
+        for (const s of entry.senses) {
+          const own = s.translations?.[from]
+          if (!own?.some((t) => t.word === sense.lemma || t.word === sense.word)) continue
+          // Into English, the English word whose table lists the source word is itself the translation.
+          if (to === 'en') add([{ word: entry.word }])
+          else add(s.translations?.[to])
+        }
+      }
+    }
+    return found
+  }
+
+  // Which of the target's regions a table tag names ("Latin-America" -> its countries), if any.
+  function tagRegions(tags: string[] | undefined, meta: LanguageMeta): Set<string> | null {
+    const out = new Set<string>()
+    for (const tag of tags ?? []) {
+      const name = tag.replace(/-/g, ' ')
+      if (meta.regions.includes(name)) out.add(name)
+      else for (const r of meta.regionGroups?.[name] ?? []) out.add(r)
+    }
+    return out.size ? out : null
+  }
+
+  // A table word the index didn't find: look it up in the target dictionary for its details. A compatible
+  // part of speech is preferred, but the table is evidence for this exact meaning, so any part of speech
+  // will do ("thanks" is an interjection; Vietnamese files "cám ơn" as a verb, "to thank").
+  async function tableHit(word: string, to: string, posList: string[], wanted: Set<string> | null, exclude: string[]): Promise<Hit | null> {
+    const entries = await dict(to).lookup(word)
+    const ordered = [...entries.filter((e) => posList.includes(e.pos)), ...entries.filter((e) => !posList.includes(e.pos))]
+    for (const entry of ordered) {
+      const index = entry.senses.findIndex((s) => !s.altOf && intersects(s.regions, wanted) && !s.labels.some((l) => exclude.includes(l)))
+      const s = entry.senses[Math.max(index, 0)]
+      if (!s) continue
+      return {
+        word: entry.word, pos: entry.pos, gloss: s.glosses[0], regions: s.regions, regionTagged: s.regionTagged,
+        labels: s.labels, senseIndex: Math.max(index, 0), senses: entry.senses.length, primary: true,
+        ...(entry.frequency !== undefined ? { frequency: entry.frequency } : {}),
+      }
+    }
+    return null
+  }
+
   return {
     senses,
 
@@ -453,6 +516,22 @@ export function createTranslator(options: TranslatorOptions = {}): Translator {
             keep(hit, score, term)
           })
         }
+        // Translation-table evidence: boost words listed as the usual translation of this meaning, more
+        // when the table tags them for the target region, less when it tags them only for other regions.
+        const table = await tableFor(sense, from, to, bridge)
+        for (const t of table) {
+          if (to === from && t.word === sense.lemma && !tagRegions(t.tags, toMeta)?.size) continue
+          let hit: Hit | null | undefined = scored.get(t.word)
+          if (!hit) hit = await tableHit(t.word, to, posList, toWanted, exclude)
+          if (!hit) continue
+          const places = tagRegions(t.tags, toMeta)
+          const regionFit = !toWanted || !places ? 0 : [...places].some((r) => toWanted.has(r)) ? TABLE_REGION_BONUS : -TABLE_OTHER_REGION_PENALTY
+          // A word only the table found (e.g. the dictionary tags "auto" Mexico but the table says
+          // Argentina) starts like a main-meaning match from the first bridge term (2 + 1).
+          const base = scored.get(t.word)?.score ?? 3 + commonness(hit, hasFrequencies) + registerFit(sense.labels, hit.labels)
+          scored.set(t.word, { ...hit, score: base + TABLE_BONUS + regionFit, bridge: 'table' })
+        }
+
         // Nothing matched a whole term: try the last word of phrases ("fresh ear of corn" -> "corn"), scored lower.
         if (scored.size === 0) {
           const heads = [...new Set(bridge.filter((t) => t.includes(' ')).map((t) => t.split(' ').pop()!))]

@@ -72,8 +72,9 @@ Every language's data defines its words in English, so English is the bridge bet
 1. **Forms and variants go to the word they belong to:** irregular forms from the data (*said* → *say*), regular English forms by rule (*walked* → *walk*, *running* → *run*), texting spellings (*dont* → *don't*), and regional variants (*hông* → *không*, keeping its Southern region).
 2. **English terms carry the meaning:** the terms in its definition ("guagua": *bus*), or for English words the word itself and its synonyms.
 3. **The target is searched with a compatible part of speech** (`compatiblePos`): a noun for a noun, but an English auxiliary verb may be a Vietnamese particle, and an adjective may be a verb in another language.
-4. **Within one language, synonyms are direct equivalents.** Wiktionary lists dialect words as synonyms (*ngô* → *bắp*, *coche* → *carro*, *lift* → *elevator*), in either direction (*dạ* lists *vâng*).
-5. **Ranking** favors **common words** ([word frequencies](#word-frequencies): *anh* over the niche *cô nương* for "you"), target words whose definition shares the source definition's details, whose *main* meaning is the match (*maíz* over *borona*, which mostly means millet), that are tagged for the target region, and that keep the **register**: a polite word translates to a polite word (Northern *vâng* → Southern *dạ*), slang to slang.
+4. **Wiktionary's translation tables** give the usual translation of each English meaning in each language, often with region tags (*car* → Spanish *coche* [Spain], *carro* [Mexico…], *auto* [Argentina…]; *cool* "mildly low temperature" → Vietnamese *mát*). Listed words get a strong boost, more when tagged for the target region, less when tagged only for other regions. Between non-English languages, the English meaning whose table lists the source word bridges them (*coche* → *car* → *xe hơi*).
+5. **Within one language, synonyms are direct equivalents.** Wiktionary lists dialect words as synonyms (*ngô* → *bắp*, *coche* → *carro*, *lift* → *elevator*), in either direction (*dạ* lists *vâng*).
+6. **Ranking** favors **common words** ([word frequencies](#word-frequencies): *anh* over the niche *cô nương* for "you"), target words whose definition shares the source definition's details, whose *main* meaning is the match (*maíz* over *borona*, which mostly means millet), that are tagged for the target region, and that keep the **register**: a polite word translates to a polite word (Northern *vâng* → Southern *dạ*), slang to slang.
 
 Meanings are ordered by `meaning` (if given), then by being tagged for `fromRegion`, then the dictionary's own order, which lists main meanings first. That order is a guess when a word has several parts of speech: Spanish *cerdo* is listed as an adjective ("dirty") before the noun ("pig"). Pass `pos` or `meaning` when you know which one you want.
 
@@ -81,12 +82,12 @@ Meanings are ordered by `meaning` (if given), then by being tagged for `fromRegi
 
 `npm run evaluate` runs known-correct translations across language pairs and dialect pairs (English → Vietnamese and Spanish by region, Spanish ↔ Vietnamese, Northern → Southern Vietnamese, Spain ↔ Mexico, US ↔ UK, into English). A case passes when a correct word is in the top 3 of the first meaning:
 
-| Set | Passed |
-|---|---|
-| Tuning set (used while developing) | 73 / 75 (97%) |
-| Held-out set (written afterwards, not tuned against) | 28 / 30 (93%) |
+| Set | Correct word in top 3 | Correct word first |
+|---|---|---|
+| Tuning set (used while developing) | 74 / 76 (97%) | 68 / 76 (89%) |
+| Held-out set (written afterwards, not tuned against) | 29 / 30 (97%) | 25 / 30 (83%) |
 
-The held-out misses: English *sleep* (an obscure noun sense is listed first) and Northern Vietnamese *bát* "bowl" (gives *mai*, not Southern *chén*).
+The held-out miss: Northern Vietnamese *bát* "bowl" (gives *mai*, not Southern *chén*).
 
 ## Looking words up
 

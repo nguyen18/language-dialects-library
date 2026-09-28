@@ -62,6 +62,7 @@ export const CASES: Case[] = [
   c(enEsMexico, 'cool', ['chido', 'padre'], { meaning: 'awesome great' }),
   c(pair('en', undefined, 'es', 'Argentina'), 'popcorn', ['pochoclo', 'pororó']),
   c(enEsMexico, 'popcorn', ['palomitas', 'palomita']),
+  c(pair('en', undefined, 'es', 'Argentina'), 'car', ['auto']),
   c(pair('en', undefined, 'es', 'Argentina'), 'you', ['vos']),
   c(enEsSpain, 'peach', ['melocotón']),
   c(enEsMexico, 'peach', ['durazno']),
@@ -154,6 +155,7 @@ export const HOLDOUT: Case[] = [
 
 async function run(cases: Case[], title: string, verbose: boolean, tr: ReturnType<typeof createTranslator>) {
   let pass = 0
+  let first = 0
   console.log(`\n${title}`)
   for (const kase of cases) {
     const { word, expect, ...options } = kase
@@ -161,10 +163,14 @@ async function run(cases: Case[], title: string, verbose: boolean, tr: ReturnTyp
     const top = groups[0]?.translations.slice(0, 3).map((t) => t.word) ?? []
     const ok = top.some((w) => expect.includes(w))
     if (ok) pass++
+    if (expect.includes(top[0])) first++
     const label = `${options.from}${options.fromRegion ? `(${options.fromRegion})` : ''} → ${options.to}${options.toRegion ? `(${options.toRegion})` : ''}  ${word}${options.meaning ? ` [${options.meaning}]` : ''}${options.pos ? ` <${options.pos}>` : ''}`
     if (verbose || !ok) console.log(`${ok ? '✓' : '✗'} ${label.padEnd(58)} ${top.join(', ') || '(nothing)'}${ok ? '' : `   expected: ${expect.join(' / ')}`}`)
   }
-  console.log(`${pass}/${cases.length} passed (${Math.round((100 * pass) / cases.length)}%)`)
+  console.log(
+    `${pass}/${cases.length} passed (${Math.round((100 * pass) / cases.length)}%); ` +
+      `correct word first: ${first}/${cases.length} (${Math.round((100 * first) / cases.length)}%)`,
+  )
   return pass
 }
 
