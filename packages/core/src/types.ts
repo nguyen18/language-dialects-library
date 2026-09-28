@@ -20,7 +20,11 @@ export type Sense = {
    * (Vietnamese "ngô" -> "bắp", Spanish "coche" -> "carro", English "lift" -> "elevator").
    */
   synonyms?: string[]
+  /** Example sentences from Wiktionary, with an English translation for non-English languages. */
+  examples?: Example[]
 }
+
+export type Example = { text: string; translation?: string }
 
 export type Entry = {
   word: string

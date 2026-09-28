@@ -41,6 +41,7 @@ type KaikkiSense = {
   raw_tags?: string[]
   topics?: string[]
   synonyms?: { word: string }[]
+  examples?: { text?: string; translation?: string; english?: string; type?: string }[]
   alt_of?: { word: string }[]
   form_of?: { word: string }[]
 }
@@ -48,6 +49,22 @@ type KaikkiEntry = { word: string; pos: string; senses?: KaikkiSense[]; synonyms
 
 // Synonyms kept per sense; enough for dialect equivalents without bloating large languages.
 const MAX_SYNONYMS = 8
+// Longer examples are usually literary quotations, not everyday sentences.
+const MAX_EXAMPLE_LENGTH = 160
+
+// Short everyday examples ("example") before quotations; with a translation first for non-English words.
+function pickExamples(raw: KaikkiSense['examples'], max: number): Sense['examples'] {
+  const usable = (raw ?? [])
+    .filter((x) => x.text && x.text.length <= MAX_EXAMPLE_LENGTH)
+    .map((x, i) => ({ x, i, rank: (x.type === 'example' ? 0 : 2) + (x.translation || x.english ? 0 : 1) }))
+    .sort((a, b) => a.rank - b.rank || a.i - b.i)
+    .slice(0, max)
+    .map(({ x }) => {
+      const translation = x.translation ?? x.english
+      return { text: x.text!.trim(), ...(translation ? { translation: translation.trim() } : {}) }
+    })
+  return usable.length ? usable : undefined
+}
 
 async function download(config: LanguageConfig, refresh: boolean) {
   const url = `https://kaikki.org/dictionary/${config.kaikkiName}/kaikki.org-dictionary-${config.kaikkiName}.jsonl`
@@ -102,6 +119,8 @@ async function readEntries(file: string, config: LanguageConfig): Promise<Entry[
       if (altOf) sense.altOf = altOf
       const synonyms = [...new Set((s.synonyms ?? []).map((x) => x.word).filter((w) => w && w !== raw.word))]
       if (synonyms.length) sense.synonyms = synonyms.slice(0, MAX_SYNONYMS)
+      const examples = pickExamples(s.examples, config.maxExamples ?? 2)
+      if (examples) sense.examples = examples
       senses.push(sense)
     }
     // Entry-level synonyms (not tied to a sense) belong to the main meaning.

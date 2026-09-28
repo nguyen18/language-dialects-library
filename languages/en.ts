@@ -93,7 +93,11 @@ const config: LanguageConfig = {
   // so only irregular ones ("said", "went", "better") are stored.
   keepFormOf: (form, lemma) => !isRegularForm(form.toLowerCase(), lemma.toLowerCase()),
   dropLabels: ['obsolete', 'archaic'],
-  maxSensesPerEntry: 6,
+  // Common words list their everyday informal meanings late ("cool": fashionable is sense 9 of 13), so
+  // the cap is generous; most words have far fewer senses anyway.
+  maxSensesPerEntry: 14,
+  // One short example per sense helps tell meanings apart; more would add a lot to a language this size.
+  maxExamples: 1,
   maxGlossLength: 140,
   // Only regional senses are searchable ("truck" in the UK -> "lorry"); for words used everywhere, the
   // English word itself is the answer.

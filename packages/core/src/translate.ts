@@ -6,7 +6,7 @@
 // on its own, so a word's meanings don't get mixed up ("cool" the temperature vs. "cool" the compliment).
 
 import { compatiblePos } from './pos.ts'
-import { glossTerms, normalizeEnglish, type Hit, type LanguageMeta } from './types.ts'
+import { glossTerms, normalizeEnglish, type Example, type Hit, type LanguageMeta } from './types.ts'
 import {
   createDictionary,
   DEFAULT_EXCLUDED_LABELS,
@@ -31,6 +31,8 @@ export type SourceSense = {
   via?: string
   /** Same-language words with this meaning (often other dialects' words). */
   synonyms?: string[]
+  /** Example sentences for this meaning. */
+  examples?: Example[]
 }
 
 /** A target-language word for a source sense. */
@@ -39,6 +41,8 @@ export type Translation = Hit & {
   score: number
   /** How this word was found: the English term that linked it, or "synonym" for a same-language synonym. */
   bridge: string
+  /** Example sentences for this word in the matched sense, when the dictionary has them. */
+  examples?: Example[]
 }
 
 export type TranslationGroup = {
@@ -241,6 +245,7 @@ export function createTranslator(options: TranslatorOptions = {}): Translator {
           labels: sense.labels,
           ...(entryVia ? { via: entryVia } : {}),
           ...(sense.synonyms ? { synonyms: sense.synonyms } : {}),
+          ...(sense.examples ? { examples: sense.examples } : {}),
         })
       }
     }
@@ -384,7 +389,9 @@ export function createTranslator(options: TranslatorOptions = {}): Translator {
               3 * overlap(ctx, hit.gloss) +
               (termIndex === 0 ? 2 : termIndex === 1 ? 1 : 0) +
               (hit.primary ? 1 : 0) +
-              (toWanted && hit.regionTagged && intersects(hit.regions, toWanted) ? 2 : 0) +
+              // Tagged for the target region: a full bonus when the match is the word's main meaning, a
+              // small one otherwise ("bá cháy" is Southern for "awesome", not for "cool" the temperature).
+              (toWanted && hit.regionTagged && intersects(hit.regions, toWanted) ? (hit.primary ? 2 : 0.5) : 0) +
               (hit.pos === sense.pos ? 0.5 : 0) +
               Math.min(hit.senses, 10) * 0.05 -
               Math.min(hit.senseIndex, 4) * 0.4 +
@@ -417,6 +424,12 @@ export function createTranslator(options: TranslatorOptions = {}): Translator {
         }
 
         const translations = [...scored.values()].sort((a, b) => b.score - a.score).slice(0, limit)
+        // Examples for the translations that made the cut: from the matched sense of each word.
+        for (const t of translations) {
+          const entry = (await dict(to).lookup(t.word)).find((e) => e.pos === t.pos && e.senses[t.senseIndex]?.glosses[0] === t.gloss)
+          const examples = entry?.senses[t.senseIndex]?.examples
+          if (examples) t.examples = examples
+        }
         if (translations.length) groups.push({ source: sense, bridge, translations })
       }
 
