@@ -70,6 +70,11 @@ export type TranslateOptions = {
   exclude?: string[]
   /** Maximum translations per source sense (default 5). */
   limit?: number
+  /**
+   * Return every sense, including ones with no translation (empty `translations`) and ones whose
+   * translations repeat another sense's. Default false. Useful for letting users pick a meaning.
+   */
+  allSenses?: boolean
 }
 
 export type Translator = {
@@ -361,7 +366,7 @@ export function createTranslator(options: TranslatorOptions = {}): Translator {
   return {
     senses,
 
-    async translate(word, { from, to, fromRegion, toRegion, pos, meaning, exclude = DEFAULT_EXCLUDED_LABELS, limit = 5 }) {
+    async translate(word, { from, to, fromRegion, toRegion, pos, meaning, exclude = DEFAULT_EXCLUDED_LABELS, limit = 5, allSenses = false }) {
       const [sourceSenses, toMeta] = await Promise.all([senses(word, { from, fromRegion, pos }), dict(to).meta()])
       const toWanted = resolveRegion(toMeta, toRegion)
       const meaningWords = meaning ? contentWords(meaning) : null
@@ -369,7 +374,10 @@ export function createTranslator(options: TranslatorOptions = {}): Translator {
       const groups: TranslationGroup[] = []
       for (const sense of sourceSenses) {
         const { terms: bridge, synonymsFrom } = bridgeTerms(sense, from)
-        if (bridge.length === 0) continue
+        if (bridge.length === 0) {
+          if (allSenses) groups.push({ source: sense, bridge, translations: [] })
+          continue
+        }
         const posList = compatiblePos(sense.pos)
         const context = contentWords(`${sense.glosses.join(' ')} ${meaning ?? ''}`)
         const scored = new Map<string, Translation>()
@@ -455,7 +463,7 @@ export function createTranslator(options: TranslatorOptions = {}): Translator {
           const examples = entry?.senses[t.senseIndex]?.examples
           if (examples) t.examples = examples
         }
-        if (translations.length) groups.push({ source: sense, bridge, translations })
+        if (translations.length || allSenses) groups.push({ source: sense, bridge, translations })
       }
 
       // Most relevant sense first: one matching `meaning`; then one tagged for the source region (the
@@ -473,6 +481,7 @@ export function createTranslator(options: TranslatorOptions = {}): Translator {
         .map((g, i) => ({ g, i, r: relevance(g) }))
         .sort((a, b) => b.r - a.r || a.i - b.i)
         .map((x) => x.g)
+      if (allSenses) return ordered
       // Senses that translate to the same words add nothing; keep the first.
       const seen = new Set<string>()
       return ordered.filter((g) => {

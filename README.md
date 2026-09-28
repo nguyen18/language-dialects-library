@@ -54,6 +54,7 @@ Loads each language's data on demand. The options are only needed to self-host t
 | `meaning` | A few words describing the meaning you want, e.g. `'awesome'` for *cool*. Matching senses and words rank first. |
 | `exclude` | Labels to leave out (default: vulgar, offensive, derogatory, archaic, obsolete, dated, historical, rare, abbreviation). |
 | `limit` | Translations per meaning (default 5). |
+| `allSenses` | Return every meaning, including ones with no translation, instead of only useful ones. For letting users pick a meaning. |
 
 It returns `TranslationGroup[]`, most relevant meaning first. Each group has:
 
