@@ -124,6 +124,21 @@ const BASE_FORMS: Record<string, (word: string) => string[]> = { en: regularBase
 // "Southern Vietnam form of không") rather than defining it. Variants with their own definition are kept.
 const FORM_GLOSS = /\b(of|for)\b/
 
+// How much being a common word counts: points per Zipf step above RARE_ZIPF (so "anh", Zipf 6.3,
+// gets about +3.4 and "tía", Zipf 3.9, about +0.5). Words missing from a language's frequency list count
+// as RARE_ZIPF - 1. Languages without frequency data fall back to a small bonus for having many senses.
+export const FREQUENCY_WEIGHT = 1.2
+const RARE_ZIPF = 3.5
+
+// The region bonus is deliberately NOT scaled by frequency: wordfreq counts worldwide text, where
+// regional words are rare even when they're the everyday word in their region (Cuban "guagua" for bus).
+// Scaling it was tried (2026-09-27) and lost those words.
+
+function commonness(hit: { frequency?: number; senses: number }, hasFrequencies: boolean): number {
+  if (!hasFrequencies) return Math.min(hit.senses, 10) * 0.05
+  return ((hit.frequency ?? RARE_ZIPF - 1) - RARE_ZIPF) * FREQUENCY_WEIGHT
+}
+
 // Matches scoring below this are dropped. A real match gets at least ~2 (a main-meaning or first-term match).
 const MIN_SCORE = 1
 
@@ -320,6 +335,7 @@ export function createTranslator(options: TranslatorOptions = {}): Translator {
         labels: s.labels,
         senseIndex: index,
         senses: entry.senses.length,
+        ...(entry.frequency !== undefined ? { frequency: entry.frequency } : {}),
         primary: true,
       })
     }
@@ -353,6 +369,7 @@ export function createTranslator(options: TranslatorOptions = {}): Translator {
               hit: {
                 word: entry.word, pos: entry.pos, gloss: s.glosses[0], regions: s.regions, regionTagged: s.regionTagged,
                 labels: s.labels, senseIndex: index, senses: entry.senses.length, primary: index === 0,
+                ...(entry.frequency !== undefined ? { frequency: entry.frequency } : {}),
               },
             }
           }
@@ -369,6 +386,7 @@ export function createTranslator(options: TranslatorOptions = {}): Translator {
     async translate(word, { from, to, fromRegion, toRegion, pos, meaning, exclude = DEFAULT_EXCLUDED_LABELS, limit = 5, allSenses = false }) {
       const [sourceSenses, toMeta] = await Promise.all([senses(word, { from, fromRegion, pos }), dict(to).meta()])
       const toWanted = resolveRegion(toMeta, toRegion)
+      const hasFrequencies = Boolean(toMeta.frequencySource)
       const meaningWords = meaning ? contentWords(meaning) : null
 
       const groups: TranslationGroup[] = []
@@ -392,7 +410,7 @@ export function createTranslator(options: TranslatorOptions = {}): Translator {
             // A synonym is a direct equivalent, so it starts ahead of words found through English.
             keep(
               hit,
-              5 + (toWanted && hit.regionTagged ? 3 : 0) + Math.min(hit.senses, 10) * 0.05 +
+              5 + (toWanted && hit.regionTagged ? 3 : 0) + commonness(hit, hasFrequencies) +
                 registerFit(sense.labels, hit.labels) -
                 hit.labels.filter((l) => LABEL_PENALTY.has(l)).length * 0.5,
               'synonym',
@@ -412,7 +430,9 @@ export function createTranslator(options: TranslatorOptions = {}): Translator {
             // Translating between dialects of one language: the word itself only counts if it's tagged for the target region.
             if (to === from && hit.word === sense.lemma && toWanted && !hit.regionTagged) return
             // A word found through a secondary sense ("borona": millet, and also corn) is a weaker match
-            // than one whose main sense is the bridge term ("maíz": corn).
+            // than one whose main sense is the bridge term ("maíz": corn). With frequency data this matters
+            // less (common words win anyway), and kinship words list "you" after "I/me" (Vietnamese "anh"),
+            // so the penalty is small then.
             const score =
               3 * overlap(ctx, hit.gloss) +
               (termIndex === 0 ? 2 : termIndex === 1 ? 1 : 0) +
@@ -421,8 +441,8 @@ export function createTranslator(options: TranslatorOptions = {}): Translator {
               // small one otherwise ("bá cháy" is Southern for "awesome", not for "cool" the temperature).
               (toWanted && hit.regionTagged && intersects(hit.regions, toWanted) ? (hit.primary ? 2 : 0.5) : 0) +
               (hit.pos === sense.pos ? 0.5 : 0) +
-              Math.min(hit.senses, 10) * 0.05 -
-              Math.min(hit.senseIndex, 4) * 0.4 +
+              commonness(hit, hasFrequencies) -
+              Math.min(hit.senseIndex, 4) * (hasFrequencies ? 0.15 : 0.4) +
               registerFit(sense.labels, hit.labels) -
               (termIndex >= synonymsFrom ? 1 : 0) -
               hit.labels.filter((l) => LABEL_PENALTY.has(l)).length * 0.5 -

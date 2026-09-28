@@ -31,6 +31,11 @@ export type Entry = {
   /** Part of speech, e.g. noun, verb, adj, pron, particle. */
   pos: string
   senses: Sense[]
+  /**
+   * How common the word is, as a Zipf frequency from wordfreq: log10 of uses per billion words (about 7
+   * for "the", 6 for everyday words, 3 for rare ones). Undefined when unknown (usually rare).
+   */
+  frequency?: number
 }
 
 /** One way to say an English term: a word plus the sense that matched. */
@@ -45,8 +50,10 @@ export type Hit = {
   altOf?: string
   /** Position of the sense within its entry; earlier senses are usually the main meaning. */
   senseIndex: number
-  /** How many senses the word has in total. A rough commonness signal: the source has no frequencies. */
+  /** How many senses the word has in total (a fallback commonness signal when `frequency` is missing). */
   senses: number
+  /** How common the word is (Zipf frequency, see Entry.frequency). */
+  frequency?: number
   /** true when the English term is the first meaning listed in the gloss (e.g. "now" in "now, today"). */
   primary: boolean
 }
@@ -65,6 +72,8 @@ export type LanguageMeta = {
   regionGroups?: Record<string, string[]>
   source: { name: string; url: string; retrieved: string; lastModified: string | null }
   license: { name: string; url: string }
+  /** Where word frequencies come from, with the credit its license requires. */
+  frequencySource?: { name: string; url: string; license: string; sources: string }
   counts: { entries: number; senses: number; regionTaggedSenses: number; englishTerms: number }
   /** Shard file names (without .json) in words/ and en/. */
   shards: { words: string[]; en: string[] }

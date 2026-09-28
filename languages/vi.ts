@@ -24,6 +24,8 @@ const config: LanguageConfig = {
   // Chinese characters (chữ Hán/chữ Nôm) and romanizations aren't words a learner looks up.
   skipPos: ['character', 'romanization'],
   keepWord: (word) => /[a-zA-ZÀ-ỹđĐ]/.test(word),
+  // wordfreq only has a "small" Vietnamese list (the most common ~25k tokens, which are syllables).
+  wordfreq: 'small',
 }
 
 export default config

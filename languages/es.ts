@@ -65,6 +65,7 @@ const config: LanguageConfig = {
   },
   // Conjugations and plurals ("first-person plural of hablar") are ~80% of the source; the base words stay.
   skipFormOf: true,
+  wordfreq: 'large',
 }
 
 export default config

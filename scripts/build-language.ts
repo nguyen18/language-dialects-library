@@ -22,6 +22,7 @@ import {
   type Sense,
   type WordShard,
 } from '../packages/core/src/types.ts'
+import { loadFrequencies, WORDFREQ_CREDIT } from './frequency.ts'
 import type { LanguageConfig } from './language-config.ts'
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
@@ -141,6 +142,7 @@ async function readEntries(file: string, config: LanguageConfig): Promise<Entry[
 const NOT_IN_ENGLISH_INDEX = new Set(['name'])
 
 function buildEnglishIndex(entries: Entry[], regionalOnly = false): Map<string, Hit[]> {
+  const frequency = new Map(entries.map((e) => [e.word, e.frequency]))
   // Variant senses ("Southern Vietnam form of không") get the English terms of the word they point to,
   // from that word's senses that aren't themselves variants, preferring the same part of speech
   // (the pronoun "tui" takes the pronoun meanings of "tôi", not its noun "servant").
@@ -181,6 +183,7 @@ function buildEnglishIndex(entries: Entry[], regionalOnly = false): Map<string, 
             labels: sense.labels,
             senseIndex,
             senses: senseCount.get(e.word) ?? 1,
+            ...(frequency.get(e.word) !== undefined ? { frequency: frequency.get(e.word) } : {}),
             primary: position === 0,
           }
           if (sense.altOf) hit.altOf = sense.altOf
@@ -216,6 +219,14 @@ async function main() {
   const source = await download(config, flags.includes('--refresh'))
 
   const entries = await readEntries(source.file, config)
+  if (config.wordfreq) {
+    const freq = await loadFrequencies(ROOT, config.lang, config.wordfreq)
+    for (const e of entries) {
+      const f = freq(e.word)
+      if (f !== undefined) e.frequency = f
+    }
+    console.log(`Frequencies: ${entries.filter((e) => e.frequency !== undefined).length} of ${entries.length} entries`)
+  }
   const byWord = new Map<string, Entry[]>()
   for (const e of entries) byWord.set(e.word, [...(byWord.get(e.word) ?? []), e])
   const english =
@@ -246,6 +257,7 @@ async function main() {
       lastModified: source.lastModified,
     },
     license: { name: 'CC BY-SA 4.0', url: 'https://creativecommons.org/licenses/by-sa/4.0/' },
+    ...(config.wordfreq ? { frequencySource: WORDFREQ_CREDIT } : {}),
     counts: {
       entries: entries.length,
       senses: senses.length,

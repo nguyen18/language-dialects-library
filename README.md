@@ -73,7 +73,7 @@ Every language's data defines its words in English, so English is the bridge bet
 2. **English terms carry the meaning:** the terms in its definition ("guagua": *bus*), or for English words the word itself and its synonyms.
 3. **The target is searched with a compatible part of speech** (`compatiblePos`): a noun for a noun, but an English auxiliary verb may be a Vietnamese particle, and an adjective may be a verb in another language.
 4. **Within one language, synonyms are direct equivalents.** Wiktionary lists dialect words as synonyms (*ngô* → *bắp*, *coche* → *carro*, *lift* → *elevator*), in either direction (*dạ* lists *vâng*).
-5. **Ranking** favors target words whose definition shares the source definition's details, whose *main* meaning is the match (*maíz* over *borona*, which mostly means millet), that are tagged for the target region, and that keep the **register**: a polite word translates to a polite word (Northern *vâng* → Southern *dạ*), slang to slang.
+5. **Ranking** favors **common words** ([word frequencies](#word-frequencies): *anh* over the niche *cô nương* for "you"), target words whose definition shares the source definition's details, whose *main* meaning is the match (*maíz* over *borona*, which mostly means millet), that are tagged for the target region, and that keep the **register**: a polite word translates to a polite word (Northern *vâng* → Southern *dạ*), slang to slang.
 
 Meanings are ordered by `meaning` (if given), then by being tagged for `fromRegion`, then the dictionary's own order, which lists main meanings first. That order is a guess when a word has several parts of speech: Spanish *cerdo* is listed as an adjective ("dirty") before the noun ("pig"). Pass `pos` or `meaning` when you know which one you want.
 
@@ -123,10 +123,26 @@ This is a suggestion tool, not a curated translation dictionary. Check results b
 - **Grammar words translate poorly.** Words defined by their function ("marks the future tense" for Vietnamese *sẽ*) aren't reached from English *will*; *the*, *is* or *gonna* may give nothing useful.
 - **Base words only for Spanish.** Conjugations and plurals are left out; use *hablar*, not *hablamos*.
 
+## Word frequencies
+
+Translations are ranked partly by how common each word is, using **[wordfreq](https://github.com/rspeer/wordfreq)** by Robyn Speer (Robyn Speer. (2022). rspeer/wordfreq: v3.0 (v3.0.2). Zenodo. https://doi.org/10.5281/zenodo.7199437), licensed CC BY-SA 4.0. Only a single frequency score is stored for each word already in these dictionaries (`frequency` on entries and results), never wordfreq's word lists.
+
+wordfreq's data comes from, and is credited to:
+
+- Google Books Ngrams (<http://books.google.com/ngrams>) and Google Books Syntactic Ngrams.
+- The Leeds Internet Corpus, from the University of Leeds Centre for Translation Studies (<http://corpus.leeds.ac.uk/list.html>).
+- Wikipedia, the free encyclopedia (<http://www.wikipedia.org>).
+- ParaCrawl, a multilingual Web crawl (<https://paracrawl.eu>).
+- OPUS OpenSubtitles 2018 (<http://opus.nlpl.eu/OpenSubtitles.php>), whose data originates from the OpenSubtitles project (<http://www.opensubtitles.org/>).
+- SUBTLEX word lists (SUBTLEX-US, SUBTLEX-UK, SUBTLEX-CH, SUBTLEX-DE, SUBTLEX-NL) created by **Marc Brysbaert et al.**; SUBTLEX is freely available data (<http://crr.ugent.be/programs-data/subtitle-frequencies>).
+- Word statistics gathered from the Twitter streaming API (no Twitter content is included).
+
+wordfreq measures commonness **worldwide**, so a regional word (Cuban *guagua*, "bus") can look rare even where it's the everyday word; the region bonus is kept separate from frequency for that reason.
+
 ## License and attribution
 
 - **Code** (this repo, and the `which-dialect` package): [MIT](LICENSE).
-- **Data** (the `which-dialect-<code>` packages): derived from Wiktionary via Kaikki.org's [wiktextract](https://github.com/tatuylonen/wiktextract) extraction, modified (filtered and reshaped) by this project, and licensed under [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/).
+- **Data** (the `which-dialect-<code>` packages): derived from Wiktionary via Kaikki.org's [wiktextract](https://github.com/tatuylonen/wiktextract) extraction, modified (filtered and reshaped) by this project, with word frequencies from [wordfreq](#word-frequencies), and licensed under [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/).
 
 If your app **shows** this data, credit it where users can see it, for example:
 

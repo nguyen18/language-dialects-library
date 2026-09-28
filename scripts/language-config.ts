@@ -44,6 +44,8 @@ export type LanguageConfig = {
    * English uses it so "truck" in the UK finds "lorry", without indexing every English word.
    */
   englishIndex?: boolean | 'regional'
+  /** wordfreq list for ranking common words first ('large' where wordfreq has it). Omit if none. */
+  wordfreq?: 'small' | 'large'
   /** Example sentences kept per sense (default 2). */
   maxExamples?: number
   /** Letters per shard key (default 2). Large languages use 3 so each file stays small. */

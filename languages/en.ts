@@ -101,6 +101,7 @@ const config: LanguageConfig = {
   // Only regional senses are searchable ("truck" in the UK -> "lorry"); for words used everywhere, the
   // English word itself is the answer.
   englishIndex: 'regional',
+  wordfreq: 'large',
   shardLength: 3,
 }
 

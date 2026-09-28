@@ -156,6 +156,8 @@ export function createDictionary(options: DictionaryOptions): Dictionary {
             Number(b.primary) - Number(a.primary) ||
             Number(regional(b)) - Number(regional(a)) ||
             LABEL_PENALTY(a) - LABEL_PENALTY(b) ||
+            // Common words first: wordfreq's frequency when the data has it, else the number of senses.
+            (b.frequency ?? 0) - (a.frequency ?? 0) ||
             b.senses - a.senses ||
             a.senseIndex - b.senseIndex,
         )
