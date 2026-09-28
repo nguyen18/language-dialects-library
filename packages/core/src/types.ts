@@ -147,7 +147,8 @@ export function glossTerms(gloss: string): [string, number][] {
   let position = 0
   // "I/me" lists two meanings, like "I; me".
   for (const part of cleaned.split(/[;,/]/)) {
-    const t = normalizeEnglish(part.replace(/[.!?]+\s*$/, ''))
+    // "etc." is not a meaning: "walking etc" -> "walking", and a lone "etc" is skipped.
+    const t = normalizeEnglish(part.replace(/[.!?]+\s*$/, '').replace(/\betc\.?$/i, '').trim())
     if (!t || t.split(' ').length > 4 || !/^[a-z][a-z' -]*$/.test(t)) continue
     terms.push([t, position])
     // The bare verb shares its phrase's position, so "wait" counts as the main meaning of "to wait for".

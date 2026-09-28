@@ -93,9 +93,8 @@ const config: LanguageConfig = {
   // so only irregular ones ("said", "went", "better") are stored.
   keepFormOf: (form, lemma) => !isRegularForm(form.toLowerCase(), lemma.toLowerCase()),
   dropLabels: ['obsolete', 'archaic'],
-  // Common words list their everyday informal meanings late ("cool": fashionable is sense 9 of 13), so
-  // the cap is generous; most words have far fewer senses anyway.
-  maxSensesPerEntry: 14,
+  // No cap on senses per word (owner's request, 2026-09-27): common words list everyday informal meanings
+  // late ("cool": fashionable is sense 9 of 13), and learners should see all of them.
   // One short example per sense helps tell meanings apart; more would add a lot to a language this size.
   maxExamples: 1,
   maxGlossLength: 140,

@@ -119,6 +119,13 @@ const BASE_FORMS: Record<string, (word: string) => string[]> = { en: regularBase
 // "Southern Vietnam form of không") rather than defining it. Variants with their own definition are kept.
 const FORM_GLOSS = /\b(of|for)\b/
 
+// Matches scoring below this are dropped. A real match gets at least ~2 (a main-meaning or first-term match).
+const MIN_SCORE = 1
+
+// A variant that's only another spelling of a different word ("yeah": pronunciation spelling of "year")
+// ranks below the word's own meanings.
+const SPELLING_VIA = /pronunciation spelling|misspelling|eye dialect|nonstandard spelling|dated spelling|informal spelling/i
+
 // Senses whose labels are all in this set rank after mainstream senses.
 const MARGINAL_LABELS = new Set(['informal', 'slang', 'colloquial', 'dialectal', 'rare', 'nonstandard', 'Internet', 'humorous'])
 const LABEL_PENALTY = new Set(['slang', 'Internet', 'humorous', 'literary', 'dialectal', 'uncommon', 'rare', 'euphemistic'])
@@ -168,12 +175,25 @@ function intersects(regions: string[], wanted: Set<string> | null): boolean {
  * English terms that carry a sense's meaning: for English, the word itself first and its synonyms last
  * ("lift" -> "elevator"); then the terms in its definitions.
  */
-function bridgeTerms(sense: SourceSense, from: string): string[] {
+function bridgeTerms(sense: SourceSense, from: string): { terms: string[]; synonymsFrom: number } {
   const terms: string[] = []
-  if (from === 'en') terms.push(normalizeEnglish(sense.lemma))
+  if (from === 'en') {
+    terms.push(normalizeEnglish(sense.lemma))
+    // The base form too, since definitions usually use it ("thanks" -> "thank": "to thank").
+    const [base] = regularBaseForms(sense.lemma)
+    if (base) terms.push(base)
+  }
   for (const gloss of sense.glosses.slice(0, 2)) for (const [term] of glossTerms(gloss)) terms.push(term)
-  if (from === 'en') for (const syn of sense.synonyms ?? []) terms.push(normalizeEnglish(syn))
-  return [...new Set(terms)].slice(0, 8)
+  const unique = [...new Set(terms)]
+  const synonymsFrom = unique.length
+  // Synonyms last: they're looser (English lists "cheers" as a synonym of "thanks"), so they score lower.
+  if (from === 'en') {
+    for (const syn of sense.synonyms ?? []) {
+      const t = normalizeEnglish(syn)
+      if (/^[a-z][a-z' -]*$/.test(t) && !unique.includes(t)) unique.push(t)
+    }
+  }
+  return { terms: unique.slice(0, 8), synonymsFrom }
 }
 
 export function createTranslator(options: TranslatorOptions = {}): Translator {
@@ -348,7 +368,7 @@ export function createTranslator(options: TranslatorOptions = {}): Translator {
 
       const groups: TranslationGroup[] = []
       for (const sense of sourceSenses) {
-        const bridge = bridgeTerms(sense, from)
+        const { terms: bridge, synonymsFrom } = bridgeTerms(sense, from)
         if (bridge.length === 0) continue
         const posList = compatiblePos(sense.pos)
         const context = contentWords(`${sense.glosses.join(' ')} ${meaning ?? ''}`)
@@ -396,6 +416,7 @@ export function createTranslator(options: TranslatorOptions = {}): Translator {
               Math.min(hit.senses, 10) * 0.05 -
               Math.min(hit.senseIndex, 4) * 0.4 +
               registerFit(sense.labels, hit.labels) -
+              (termIndex >= synonymsFrom ? 1 : 0) -
               hit.labels.filter((l) => LABEL_PENALTY.has(l)).length * 0.5 -
               rank * 0.1
             keep(hit, score, term)
@@ -423,7 +444,11 @@ export function createTranslator(options: TranslatorOptions = {}): Translator {
           }
         }
 
-        const translations = [...scored.values()].sort((a, b) => b.score - a.score).slice(0, limit)
+        // Below this score a match is noise (an unrelated word that happened to share a term).
+        const translations = [...scored.values()]
+          .filter((t) => t.score >= MIN_SCORE)
+          .sort((a, b) => b.score - a.score)
+          .slice(0, limit)
         // Examples for the translations that made the cut: from the matched sense of each word.
         for (const t of translations) {
           const entry = (await dict(to).lookup(t.word)).find((e) => e.pos === t.pos && e.senses[t.senseIndex]?.glosses[0] === t.gloss)
@@ -438,8 +463,10 @@ export function createTranslator(options: TranslatorOptions = {}): Translator {
       // otherwise the dictionary's order. Pass `pos` or `meaning` when you know the sense you want.
       // Translation scores aren't used to order senses: definition overlap inflates minor senses
       // ("coche": carriage, coach), so the dictionary's order (main meanings first) decides.
+      const ownSenses = sourceSenses.some((s) => !s.via)
       const relevance = (g: TranslationGroup) =>
-        (meaningWords ? 10 * overlap(meaningWords, g.source.glosses.join(' ')) : 0) +
+        (meaningWords ? 10 * overlap(meaningWords, g.source.glosses.join(' ')) : 0) -
+        (ownSenses && g.source.via && SPELLING_VIA.test(g.source.via) ? 2 : 0) +
         (fromRegion && g.source.regionTagged ? 3 : 0) -
         (g.source.labels.length && g.source.labels.every((l) => MARGINAL_LABELS.has(l)) ? 1 : 0)
       const ordered = groups

@@ -30,7 +30,7 @@ English Wiktionary has about 1.5 million entries (3.3 GB), so this package keeps
 
 - Up to two-word headwords ("ice cream", "going to"); no proper names, symbols or proverbs.
 - No purely technical entries (every sense is biology, law, chemistry, …), and no obsolete or archaic senses.
-- Up to 6 senses per entry, with long definitions shortened.
+- Every sense of a word is kept (no cap), with long definitions shortened and one example sentence per sense.
 - **Irregular forms only** (*said*, *went*, *better*, *was*). Regular forms (*walked*, *cities*, *running*) are left out; the translator undoes them by rule (`regularBaseForms`).
 - The English search index covers **regional** senses only ("truck" in the UK → "lorry"); words used everywhere are found with `lookup`.
 - Sense synonyms are kept (up to 8), which is how US/UK pairs like *lift*/*elevator* are linked.
