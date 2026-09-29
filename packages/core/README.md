@@ -52,6 +52,7 @@ Loads each language's data on demand. The options are only needed to self-host t
 | `fromRegion`, `toRegion` | Region or region group, e.g. `'Mexico'`, `'Latin America'`, `'Southern'`, `'UK'`. `fromRegion` keeps only the word's senses used there; `toRegion` ranks words tagged for it first and leaves out words tagged only for other regions. |
 | `pos` | Only source senses with this part of speech, e.g. `'noun'`. |
 | `meaning` | A few words describing the meaning you want, e.g. `'awesome'` for *cool*. Matching senses and words rank first. |
+| `register` | `'casual'`, `'neutral'` or `'polite'`: the register you want translations in, instead of the source's own. `'casual'` favors colloquial words (Southern *tui* for "I"). |
 | `exclude` | Labels to leave out (default: vulgar, offensive, derogatory, archaic, obsolete, dated, historical, rare, abbreviation). |
 | `limit` | Translations per meaning (default 5). |
 | `allSenses` | Return every meaning, including ones with no translation, instead of only useful ones. For letting users pick a meaning. |

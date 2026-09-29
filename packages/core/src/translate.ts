@@ -68,6 +68,11 @@ export type TranslateOptions = {
   pos?: string
   /** Words describing the meaning you want, e.g. "awesome" for "cool". Matching senses and words rank first. */
   meaning?: string
+  /**
+   * The register you want translations in, instead of the source sense's own: 'casual' prefers
+   * colloquial words (Southern "tui" for "I"), 'polite' polite/formal ones, 'neutral' plain ones.
+   */
+  register?: 'casual' | 'neutral' | 'polite'
   /** Labels to leave out of translations (default DEFAULT_EXCLUDED_LABELS). */
   exclude?: string[]
   /** Maximum translations per source sense (default 5). */
@@ -167,8 +172,8 @@ function register(labels: string[]): 'polite' | 'casual' | null {
   if (labels.some((l) => CASUAL.has(l))) return 'casual'
   return null
 }
-function registerFit(source: string[], target: string[]): number {
-  const a = register(source)
+function registerFit(source: string[], target: string[], wanted?: 'casual' | 'neutral' | 'polite'): number {
+  const a = wanted ? (wanted === 'neutral' ? null : wanted) : register(source)
   const b = register(target)
   if (!b) return 0
   // A neutral meaning ("cool" the temperature) prefers neutral words over slang ("chất": cool, informal),
@@ -468,7 +473,7 @@ export function createTranslator(options: TranslatorOptions = {}): Translator {
   return {
     senses,
 
-    async translate(word, { from, to, fromRegion, toRegion, pos, meaning, exclude = DEFAULT_EXCLUDED_LABELS, limit = 5, allSenses = false }) {
+    async translate(word, { from, to, fromRegion, toRegion, pos, meaning, register: wantedRegister, exclude = DEFAULT_EXCLUDED_LABELS, limit = 5, allSenses = false }) {
       const [sourceSenses, toMeta] = await Promise.all([senses(word, { from, fromRegion, pos }), dict(to).meta()])
       const toWanted = resolveRegion(toMeta, toRegion)
       const hasFrequencies = Boolean(toMeta.frequencySource)
@@ -496,7 +501,7 @@ export function createTranslator(options: TranslatorOptions = {}): Translator {
             keep(
               hit,
               5 + (toWanted && hit.regionTagged ? 3 : 0) + commonness(hit, hasFrequencies) +
-                registerFit(sense.labels, hit.labels) -
+                registerFit(sense.labels, hit.labels, wantedRegister) -
                 hit.labels.filter((l) => LABEL_PENALTY.has(l)).length * 0.5,
               'synonym',
             )
@@ -531,7 +536,7 @@ export function createTranslator(options: TranslatorOptions = {}): Translator {
               (hit.pos === sense.pos ? 0.5 : 0) +
               commonness(hit, hasFrequencies) -
               Math.min(hit.senseIndex, 4) * (hasFrequencies ? 0.15 : 0.4) +
-              registerFit(sense.labels, hit.labels) -
+              registerFit(sense.labels, hit.labels, wantedRegister) -
               (termIndex >= synonymsFrom ? 1 : 0) -
               hit.labels.filter((l) => LABEL_PENALTY.has(l)).length * 0.5 -
               rank * 0.1
@@ -550,7 +555,7 @@ export function createTranslator(options: TranslatorOptions = {}): Translator {
           const regionFit = !toWanted || !places ? 0 : [...places].some((r) => toWanted.has(r)) ? TABLE_REGION_BONUS : -TABLE_OTHER_REGION_PENALTY
           // A word only the table found (e.g. the dictionary tags "auto" Mexico but the table says
           // Argentina) starts like a main-meaning match from the first bridge term (2 + 1).
-          const base = scored.get(t.word)?.score ?? 3 + commonness(hit, hasFrequencies) + registerFit(sense.labels, hit.labels)
+          const base = scored.get(t.word)?.score ?? 3 + commonness(hit, hasFrequencies) + registerFit(sense.labels, hit.labels, wantedRegister)
           scored.set(t.word, { ...hit, score: base + TABLE_BONUS + regionFit, bridge: 'table' })
         }
 
