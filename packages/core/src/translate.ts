@@ -177,10 +177,16 @@ function registerFit(source: string[], target: string[]): number {
   return a === b ? 1 : -2
 }
 
-// Words too common to say anything about a meaning.
+// Words too common to say anything about a meaning, and dictionary jargon: words that describe how a
+// definition is written ("the speaker or writer, referred to as the grammatical subject") rather than
+// what the word means. Without the jargon, Vietnamese "con" ("used when talking to someone older than
+// the speaker") matched English "I" ("the speaker or writer") on "speaker".
 const STOPWORDS = new Set(
   ('a an the to of or and in on for with by as at from that this be is are was it its used use any some one ' +
-    'something someone very more most usually especially often also who which what when being having into').split(' '),
+    'something someone very more most usually especially often also who which what when being having into ' +
+    'speaker speakers writer referred refer refers referring grammatical subject object sentence clause ' +
+    'word words form forms term expression phrase talking speaking addressed addressing person people ' +
+    'particular certain various generally sense usage meaning').split(' '),
 )
 
 function contentWords(text: string): Set<string> {
@@ -207,15 +213,26 @@ function intersects(regions: string[], wanted: Set<string> | null): boolean {
  * English terms that carry a sense's meaning: for English, the word itself first and its synonyms last
  * ("lift" -> "elevator"); then the terms in its definitions.
  */
-function bridgeTerms(sense: SourceSense, from: string): { terms: string[]; synonymsFrom: number } {
+function bridgeTerms(sense: SourceSense, from: string): { terms: string[]; synonymsFrom: number; main: Set<string> } {
   const terms: string[] = []
+  // Main terms get the full "main meaning" bonus: the English word itself, and the first term of the
+  // definition ("will": "Used to express the future tense" → "future tense", which is what "sẽ" means).
+  const main = new Set<string>()
   if (from === 'en') {
     terms.push(normalizeEnglish(sense.lemma))
+    main.add(normalizeEnglish(sense.lemma))
     // The base form too, since definitions usually use it ("thanks" -> "thank": "to thank").
     const [base] = regularBaseForms(sense.lemma)
     if (base) terms.push(base)
   }
-  for (const gloss of sense.glosses.slice(0, 2)) for (const [term] of glossTerms(gloss)) terms.push(term)
+  // Headings ("As a copulative verb:") carry no meaning, so the specific definitions are used.
+  const glosses = sense.glosses.filter((g) => !g.trim().endsWith(':'))
+  glosses.slice(0, 2).forEach((gloss, gi) => {
+    for (const [term, position] of glossTerms(gloss)) {
+      terms.push(term)
+      if (gi === 0 && position === 0) main.add(term)
+    }
+  })
   const unique = [...new Set(terms)]
   const synonymsFrom = unique.length
   // Synonyms last: they're looser (English lists "cheers" as a synonym of "thanks"), so they score lower.
@@ -225,7 +242,7 @@ function bridgeTerms(sense: SourceSense, from: string): { terms: string[]; synon
       if (/^[a-z][a-z' -]*$/.test(t) && !unique.includes(t)) unique.push(t)
     }
   }
-  return { terms: unique.slice(0, 8), synonymsFrom }
+  return { terms: unique.slice(0, 8), synonymsFrom, main }
 }
 
 export function createTranslator(options: TranslatorOptions = {}): Translator {
@@ -302,12 +319,14 @@ export function createTranslator(options: TranslatorOptions = {}): Translator {
         })
       }
     }
-    // The same sense reached twice (e.g. through two spellings) is kept once.
+    // The same sense reached twice (e.g. through two spellings) is kept once. The key uses all the
+    // glosses: nested senses share their first line (a heading like "As a copulative verb:"), and keying
+    // on it alone dropped every sense after the first under a heading.
     const seen = new Set<string>()
     return out
       .map((s) => ({ ...s, word: w }))
       .filter((s) => {
-        const key = `${s.lemma}\u0000${s.pos}\u0000${s.glosses[0]}`
+        const key = `${s.lemma}\u0000${s.pos}\u0000${s.glosses.join('\u0001')}`
         return !seen.has(key) && seen.add(key)
       })
   }
@@ -457,7 +476,7 @@ export function createTranslator(options: TranslatorOptions = {}): Translator {
 
       const groups: TranslationGroup[] = []
       for (const sense of sourceSenses) {
-        const { terms: bridge, synonymsFrom } = bridgeTerms(sense, from)
+        const { terms: bridge, synonymsFrom, main } = bridgeTerms(sense, from)
         if (bridge.length === 0) {
           if (allSenses) groups.push({ source: sense, bridge, translations: [] })
           continue
@@ -491,7 +510,10 @@ export function createTranslator(options: TranslatorOptions = {}): Translator {
           const hits =
             to === 'en'
               ? await englishCandidates(term, posList, toMeta, toRegion, exclude)
-              : await dict(to).searchEnglish(term, { region: toRegion, pos: posList, exclude, limit: 25 })
+              // A generous limit: the dictionary's quick ranking puts region-tagged words first, and the
+              // full scoring below should decide (English "I" has 40+ Vietnamese pronoun candidates, and a
+              // limit of 25 cut off the most common, "tôi").
+              : await dict(to).searchEnglish(term, { region: toRegion, pos: posList, exclude, limit: 100 })
           hits.forEach((hit, rank) => {
             // Translating between dialects of one language: the word itself only counts if it's tagged for the target region.
             if (to === from && hit.word === sense.lemma && toWanted && !hit.regionTagged) return
@@ -501,7 +523,7 @@ export function createTranslator(options: TranslatorOptions = {}): Translator {
             // so the penalty is small then.
             const score =
               3 * overlap(ctx, hit.gloss) +
-              (termIndex === 0 ? 2 : termIndex === 1 ? 1 : 0) +
+              (main.has(term) || termIndex === 0 ? 2 : termIndex === 1 ? 1 : 0) +
               (hit.primary ? 1 : 0) +
               // Tagged for the target region: a full bonus when the match is the word's main meaning, a
               // small one otherwise ("bá cháy" is Southern for "awesome", not for "cool" the temperature).

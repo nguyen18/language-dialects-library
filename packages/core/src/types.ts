@@ -148,6 +148,15 @@ export function normalizeEnglish(term: string): string {
     .replace(/^(to|a|an|the) (?=\S)/, '')
 }
 
+/**
+ * The most useful line of a sense's definitions for display. Wiktionary nests some senses under a
+ * heading ("As a copulative verb:" → "Used to indicate that the subject and object are the same."), so
+ * headings ending in ":" are skipped in favor of the specific definition.
+ */
+export function displayGloss(glosses: string[]): string {
+  return glosses.find((g) => !g.trim().endsWith(':')) ?? glosses[0] ?? ''
+}
+
 // Trailing words dropped to also match the bare verb: "wait for" is found by "wait" too.
 const TRAILING_PARTICLE = / (for|to|at|on|with|about|of|in|into|up|out|off|over)$/
 
@@ -158,6 +167,10 @@ const TRAILING_PARTICLE = / (for|to|at|on|with|about|of|in|into|up|out|off|over)
  * part after it is used. Only short, plain phrases (up to 4 words) are kept. Returns [term, position].
  */
 export function glossTerms(gloss: string): [string, number][] {
+  // Grammar words are defined by what they do: "marks the future tense" (Vietnamese "sẽ"), "Used to
+  // express the future tense" (English "will"). The phrase after marks/expresses/indicates/denotes is
+  // their meaning, so it's a term too, placed after the gloss's own terms.
+  const grammar = [...gloss.matchAll(GRAMMAR_PHRASE)].map((m) => normalizeEnglish(m[1])).filter((t) => t.split(' ').length <= 3)
   let cleaned = gloss.replace(/\([^)]*\)/g, ' ').replace(/[“”"]/g, '')
   if (cleaned.includes(':')) cleaned = cleaned.slice(cleaned.lastIndexOf(':') + 1)
   const terms: [string, number][] = []
@@ -173,5 +186,12 @@ export function glossTerms(gloss: string): [string, number][] {
     if (bare !== t && bare) terms.push([bare, position])
     position++
   }
+  // A grammar phrase is the main meaning when the gloss's first term is the grammar description itself
+  // ("marks the future tense" → "future tense" is what "sẽ" means); otherwise it follows the other terms.
+  const describesGrammar = terms.length === 0 || grammar.some((g) => terms[0][0].includes(g))
+  for (const t of grammar) if (!terms.some(([x]) => x === t)) terms.push([t, describesGrammar ? 0 : position++])
   return terms
 }
+
+const GRAMMAR_PHRASE =
+  /\b(?:marks?|marking|express(?:es|ing)?|indicat(?:es?|ing)|denot(?:es?|ing)|signals?)\s+(?:the\s+|a\s+|an\s+)?([a-z][a-z -]{2,30}?)(?=\s*(?:[,;.(]|$|\s+(?:of|in|with|for|or|and|when|that)\b))/gi
