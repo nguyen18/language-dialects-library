@@ -110,6 +110,32 @@ never instead of it.
   word's meanings and current top 3, the owner marks the right first choice, and rows are written from
   that. First candidates: get "fetch" → lấy, mang; get "obtain" → lấy.
 
+**Scaling to more languages (owner's requirement: every feature must work as languages are added):**
+
+1. **Optional per language.** A language with no picks works exactly as today (ranking only), so adding
+   a language never requires picks; they're an improvement a speaker adds later.
+2. **One list per language, keyed by English meaning.** N languages need N lists, not N² pair lists,
+   because translation between two non-English languages goes through the English meaning
+   (`tableFor()`). Source-language keys only for distinctions English loses, in that language's file.
+3. **Lives with the language, not the API.** Rows in `languages/<lang>.ts` (a `picks` option, like the
+   pronoun table's `address`); the build writes `packages/<lang>/data/picks.json` and sets
+   `meta.picks: true`; the API loads it on demand like `pronouns.json`. The API package doesn't grow
+   with languages, and picks are versioned with that language's data.
+4. **Machine-drafted, human-reviewed.** A script (e.g. `npm run picks-sheet -- <lang>`) lists the top
+   English words by frequency (wordfreq, already used) × their meanings × the current top 3 and
+   Wiktionary's table words. A speaker only marks rows where the first choice is wrong; rows are
+   generated from the marks. Reviewing is the only work that grows with languages, and it's the part
+   that needs a speaker.
+5. **Prioritize by frequency, track coverage.** Top 100 English words first, then 500, 1000. The build
+   prints coverage per language (how many of the top-N meanings have a pick or already rank right).
+6. **Built to survive data refreshes.** Rows match by English word + part of speech + a definition
+   pattern; the build warns for rows that no longer match (as `scripts/pronouns.ts` does), per
+   language.
+7. **Measured per language.** `npm run evaluate` reports each language with and without picks, and
+   each language gets its own evaluation cases.
+8. **Upstream when possible.** Picks use Wiktionary's table format, so good ones can be added to
+   Wiktionary's translation tables, which then help every language pair on the next refresh.
+
 ### The English word itself as weak evidence for words with many meanings ("fix 2")
 
 **Problem:** the English word itself is always a main search term, so for *get* (33 meanings) every
