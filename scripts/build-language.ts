@@ -3,8 +3,9 @@
 //   node --experimental-strip-types scripts/build-language.ts vi [--refresh]
 //
 // Downloads kaikki.org's JSONL for the language (cached in .cache/, --refresh re-downloads), keeps the
-// fields a learner needs, and writes packages/<lang>/data/: meta.json, words/<shard>.json (by headword)
-// and en/<shard>.json (English term -> words). The data is CC BY-SA 4.0 (see packages/<lang>/LICENSE).
+// fields a learner needs, and writes packages/<lang>/data/: meta.json, words/<shard>.json (by headword),
+// en/<shard>.json (English term -> words) and, when the config has one, address.json (see address.ts).
+// The data is CC BY-SA 4.0 (see packages/<lang>/LICENSE).
 
 import { createReadStream, existsSync } from 'node:fs'
 import { mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises'
@@ -20,8 +21,10 @@ import {
   type Hit,
   type LanguageMeta,
   type Sense,
+  type StoredAddressRow,
   type WordShard,
 } from '../packages/core/src/types.ts'
+import { buildAddressTable } from './address.ts'
 import { loadFrequencies, WORDFREQ_CREDIT } from './frequency.ts'
 import type { LanguageConfig } from './language-config.ts'
 
@@ -269,6 +272,18 @@ async function main() {
   const wordShards = await writeShards(join(outDir, 'words'), storedWords, shardLength)
   const enShards = await writeShards(join(outDir, 'en'), storedEnglish, shardLength)
 
+  if (config.address) {
+    const { rows, report } = buildAddressTable(entries, config.address, config.regions)
+    const stored: StoredAddressRow[] = rows.map((r) => ({
+      ...r,
+      self: r.self.map((c) => toStored(c)),
+      addressee: r.addressee.map((c) => toStored(c)),
+    }))
+    await writeFile(join(outDir, 'address.json'), JSON.stringify(stored))
+    console.log(`Address table: ${rows.length} rows, ${report.fromGlosses} words from definitions, ${report.overrides} overrides`)
+    for (const u of report.unmatched) console.warn(`  WARNING: no definition matches ${u}`)
+  }
+
   const senses = entries.flatMap((e) => e.senses)
   const meta: LanguageMeta = {
     lang: config.lang,
@@ -291,6 +306,7 @@ async function main() {
     },
     shards: { words: wordShards, en: enShards },
     ...(shardLength !== 2 ? { shardLength } : {}),
+    ...(config.address ? { address: true } : {}),
   }
   await writeFile(join(outDir, 'meta.json'), JSON.stringify(meta, null, 2))
 
