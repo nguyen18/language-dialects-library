@@ -63,6 +63,7 @@ describe('searchEnglish ranking (fake data)', () => {
         hit('rude', { labels: ['vulgar'] }),
         hit('slangy', { labels: ['slang'], senses: 9 }),
         hit('secondary', { primary: false, senses: 20 }),
+        hit('plain', { senses: 5, senseIndex: 1, labels: ['formal'] }),
       ],
     },
   }
@@ -76,6 +77,12 @@ describe('searchEnglish ranking (fake data)', () => {
   it('excludes vulgar words by default, and includes them with exclude: []', async () => {
     assert.ok(!(await dict.searchEnglish('not')).some((h) => h.word === 'rude'))
     assert.ok((await dict.searchEnglish('not', { exclude: [] })).some((h) => h.word === 'rude'))
+  })
+
+  it('returns one sense per word, or every sense with allSenses', async () => {
+    assert.equal((await dict.searchEnglish('not')).filter((h) => h.word === 'plain').length, 1)
+    const all = await dict.searchEnglish('not', { allSenses: true })
+    assert.deepEqual(all.filter((h) => h.word === 'plain').map((h) => h.senseIndex), [0, 1])
   })
 
   it('treats untagged hits as every region', async () => {

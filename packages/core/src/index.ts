@@ -58,6 +58,11 @@ export type SearchOptions = {
   exclude?: string[]
   /** Maximum number of results (default 10). */
   limit?: number
+  /**
+   * Return every matching sense of each word instead of one result per word (its best-ranked sense), so
+   * a caller can choose between a word's senses itself. `limit` then counts words, not results.
+   */
+  allSenses?: boolean
 }
 
 export type AddressOptions = {
@@ -153,7 +158,7 @@ export function createDictionary(options: DictionaryOptions): Dictionary {
       return stored.map((e) => ({ ...e, senses: e.senses.map((s) => fromStored(s, m.regions)) }))
     },
 
-    async searchEnglish(term, { region, pos, exclude = DEFAULT_EXCLUDED_LABELS, limit = 10 } = {}) {
+    async searchEnglish(term, { region, pos, exclude = DEFAULT_EXCLUDED_LABELS, limit = 10, allSenses = false } = {}) {
       const key = normalizeEnglish(term)
       if (!key) return []
       const m = await meta()
@@ -179,9 +184,12 @@ export function createDictionary(options: DictionaryOptions): Dictionary {
             b.senses - a.senses ||
             a.senseIndex - b.senseIndex,
         )
-      // One result per word: its best-ranked sense.
+      // One result per word, its best-ranked sense (or every sense of the first `limit` words).
       const seen = new Set<string>()
-      return ranked.filter((h) => !seen.has(h.word) && seen.add(h.word)).slice(0, limit)
+      const words = ranked.filter((h) => !seen.has(h.word) && seen.add(h.word)).slice(0, limit)
+      if (!allSenses) return words
+      const kept = new Set(words.map((h) => h.word))
+      return ranked.filter((h) => kept.has(h.word))
     },
 
     async address({ listener, region, speaker, exclude = DEFAULT_EXCLUDED_LABELS } = {}) {
