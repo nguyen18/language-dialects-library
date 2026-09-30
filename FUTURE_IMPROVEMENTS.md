@@ -72,69 +72,25 @@ meaning none). **Suggested approach:** check a table against the sense it's on (
 translations' definitions overlap the sense's?) and move it to the best-matching sense of the same
 entry at build time, like `attachEntryTranslations` does for entry-level tables.
 
-### Hand-picked first choices ("picks" layer) — planned next
+### Hand-picked words: what's left
 
-**Problem:** for common words a native speaker knows the natural first choice, and the data sometimes
-doesn't say it. *get* "To fetch, bring, take" ranks *đưa* above *lấy* because *đưa*'s definition ("to
-bring, to take, to give, to hand") matches more of the English words and no *lấy* sense says "fetch".
-Ranking rules can't fix that without special cases.
+The picks layer is **implemented** (2026-09-30; see ARCHITECTURE.md "Hand-picked words" and the README).
+The owner reviews the top-100 sheet (`npm run picks-sheet -- vi --words ~/dev/top_100_words.txt`) to
+add rows. Left for later, from the agreed design:
 
-**Design (agreed with the owner, 2026-09-30):** a small hand-curated layer **on top of** the ranking,
-never instead of it.
-
-- **Keyed by English meaning, not by language pair:** `languages/<lang>.picks.ts` (or similar), rows
-  `{ word: 'get', gloss: /fetch/, pos?: 'verb', picks: [{ word: 'lấy' }, { word: 'mang' }] }`. Each
-  language adds one list, so work grows with the number of languages, not with pairs. Non-English
-  sources reach them the way translation tables do (`tableFor()`): source meaning → matching English
-  meaning → the target language's picks. Same format as Wiktionary tables, so good picks can be
-  contributed upstream.
-- **Where results go:** `translate()` keeps one group per meaning, in the same meaning order. In a
-  group whose English meaning has picks: picked words first (in the listed order, `bridge: 'picked'`),
-  then the ranked words as today (duplicates of picks removed), cut at `limit` (picks count toward it).
-  Meanings without picks are unchanged.
-- **Regions:** a pick can carry a region, like tables (`{ word: 'heo', tags: ['Southern'] }`); reuse the
-  table's region logic (tagged for `toRegion` first, other regions' picks lower).
-- **Meaning order:** picks don't move meanings by default. An optional per-row flag can put that meaning
-  first when no context is given (e.g. *got* → "have"); opt-in, since it claims what people usually mean.
-- **Source-language keys where English loses distinctions:** English "rice" collapses *gạo*/*cơm*/*lúa*,
-  "you" collapses *anh*/*em*/*chị*/*bạn*; bridging two non-English languages through English compounds
-  that. Rows can instead be keyed by a source-language meaning, like the (Vietnamese-specific) pronoun
-  table.
-- **Robustness:** Wiktionary rewords definitions on refresh, so the build checks every row still matches
-  a sense and **warns** when not (like `scripts/pronouns.ts`).
-- **Keep the ranking visible:** a `picks: false` translator option, and `npm run evaluate` reports with
-  and without picks, so scores measure the ranking and the long tail (never hand-picked) doesn't quietly
-  get worse.
-- **Scope:** only common words where a native speaker notices a wrong answer. Start with the top-100
-  list (`~/dev/top_100_words.txt`, already used for before/after comparisons): generate a sheet of each
-  word's meanings and current top 3, the owner marks the right first choice, and rows are written from
-  that. First candidates: get "fetch" → lấy, mang; get "obtain" → lấy.
-
-**Scaling to more languages (owner's requirement: every feature must work as languages are added):**
-
-1. **Optional per language.** A language with no picks works exactly as today (ranking only), so adding
-   a language never requires picks; they're an improvement a speaker adds later.
-2. **One list per language, keyed by English meaning.** N languages need N lists, not N² pair lists,
-   because translation between two non-English languages goes through the English meaning
-   (`tableFor()`). Source-language keys only for distinctions English loses, in that language's file.
-3. **Lives with the language, not the API.** Rows in `languages/<lang>.ts` (a `picks` option, like the
-   pronoun table's `address`); the build writes `packages/<lang>/data/picks.json` and sets
-   `meta.picks: true`; the API loads it on demand like `pronouns.json`. The API package doesn't grow
-   with languages, and picks are versioned with that language's data.
-4. **Machine-drafted, human-reviewed.** A script (e.g. `npm run picks-sheet -- <lang>`) lists the top
-   English words by frequency (wordfreq, already used) × their meanings × the current top 3 and
-   Wiktionary's table words. A speaker only marks rows where the first choice is wrong; rows are
-   generated from the marks. Reviewing is the only work that grows with languages, and it's the part
-   that needs a speaker.
-5. **Prioritize by frequency, track coverage.** Top 100 English words first, then 500, 1000. The build
-   prints coverage per language (how many of the top-N meanings have a pick or already rank right).
-6. **Built to survive data refreshes.** Rows match by English word + part of speech + a definition
-   pattern; the build warns for rows that no longer match (as `scripts/pronouns.ts` does), per
-   language.
-7. **Measured per language.** `npm run evaluate` reports each language with and without picks, and
-   each language gets its own evaluation cases.
-8. **Upstream when possible.** Picks use Wiktionary's table format, so good ones can be added to
-   Wiktionary's translation tables, which then help every language pair on the next refresh.
+- **Keys by source-language meaning**, for distinctions English loses (*gạo*/*cơm*/*lúa* are all
+  "rice"; "you" collapses *anh*/*em*/*chị*/*bạn*). Rows would live in the source language's config
+  ("from this meaning, prefer …") and match the source sense directly instead of through English. Only
+  where English-keyed picks can't say it.
+- **Coverage report:** the sheet counts picked meanings; a coverage line per language in the build
+  (share of the top-N English meanings with a pick or reviewed as already right) needs a way to record
+  "reviewed, ranking is right" (e.g. a `reviewed` list, or `your_pick` = `ok`).
+- **Size at scale:** `picks.json` is one file per language, loaded whole. Fine for thousands of rows;
+  shard it like `words/` if a language grows past ~10k rows.
+- **Upstream:** picks use Wiktionary's table format; good ones can be added to Wiktionary's translation
+  tables so every tool benefits on the next data refresh.
+- **Into English:** picks aren't applied when translating into English (they're keyed by English
+  meaning); English-target preferences would need source-language keys (above).
 
 ### The English word itself as weak evidence for words with many meanings ("fix 2")
 

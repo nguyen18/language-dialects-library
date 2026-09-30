@@ -27,24 +27,7 @@ export const WORDFREQ_CREDIT = {
  * words), rounded to one decimal, or undefined if the word isn't in the list.
  */
 export async function loadFrequencies(root: string, lang: string, list: 'small' | 'large') {
-  const file = join(root, '.cache', `wordfreq-${list}_${lang}.msgpack.gz`)
-  if (!existsSync(file)) {
-    const url = `https://raw.githubusercontent.com/rspeer/wordfreq/master/wordfreq/data/${list}_${lang}.msgpack.gz`
-    console.log(`Downloading ${url}`)
-    const res = await fetch(url)
-    if (!res.ok) throw new Error(`wordfreq download failed: ${res.status}`)
-    await mkdir(dirname(file), { recursive: true })
-    await writeFile(file, Buffer.from(await res.arrayBuffer()))
-  }
-  // cBpack format: a header, then buckets; bucket i holds the words whose frequency is 10^(-i/100)
-  // (i centibels below 1), so Zipf = 9 - i/100.
-  const [header, ...buckets] = decode(gunzipSync(await readFile(file))) as [{ format: string }, ...string[][]]
-  if (header?.format !== 'cB') throw new Error(`Unexpected wordfreq format in ${file}`)
-  const zipf = new Map<string, number>()
-  buckets.forEach((bucket, i) => {
-    for (const w of bucket) if (!zipf.has(w)) zipf.set(w, 9 - i / 100)
-  })
-
+  const zipf = await loadZipf(root, lang, list)
   const round = (z: number) => Math.round(z * 10) / 10
   return (text: string): number | undefined => {
     const key = text.toLowerCase().normalize('NFC').trim()
@@ -64,4 +47,36 @@ export async function loadFrequencies(root: string, lang: string, list: 'small' 
     }
     return round(Math.log10(1 / inverse) + 9 - (parts.length - 1))
   }
+}
+
+/** The language's most frequent words, most frequent first (letters only: no numbers or "'s"). */
+export async function topWords(root: string, lang: string, list: 'small' | 'large', n: number): Promise<string[]> {
+  const out: string[] = []
+  for (const w of (await loadZipf(root, lang, list)).keys()) {
+    if (/^\p{L}+$/u.test(w)) out.push(w)
+    if (out.length === n) break
+  }
+  return out
+}
+
+// Word → Zipf frequency, in the list's order (most frequent first).
+async function loadZipf(root: string, lang: string, list: 'small' | 'large'): Promise<Map<string, number>> {
+  const file = join(root, '.cache', `wordfreq-${list}_${lang}.msgpack.gz`)
+  if (!existsSync(file)) {
+    const url = `https://raw.githubusercontent.com/rspeer/wordfreq/master/wordfreq/data/${list}_${lang}.msgpack.gz`
+    console.log(`Downloading ${url}`)
+    const res = await fetch(url)
+    if (!res.ok) throw new Error(`wordfreq download failed: ${res.status}`)
+    await mkdir(dirname(file), { recursive: true })
+    await writeFile(file, Buffer.from(await res.arrayBuffer()))
+  }
+  // cBpack format: a header, then buckets; bucket i holds the words whose frequency is 10^(-i/100)
+  // (i centibels below 1), so Zipf = 9 - i/100.
+  const [header, ...buckets] = decode(gunzipSync(await readFile(file))) as [{ format: string }, ...string[][]]
+  if (header?.format !== 'cB') throw new Error(`Unexpected wordfreq format in ${file}`)
+  const zipf = new Map<string, number>()
+  buckets.forEach((bucket, i) => {
+    for (const w of bucket) if (!zipf.has(w)) zipf.set(w, 9 - i / 100)
+  })
+  return zipf
 }

@@ -196,6 +196,49 @@ describe('Vietnamese data', { skip: !existsSync(viData) && 'run `npm run build:d
   })
 })
 
+describe('hand-picked words (fake data)', () => {
+  // English "fetch" has one meaning, whose translation table lists source-language (yy) "holen". The
+  // target language (xx) ranks "wrong" first for "fetch" and has picks for that meaning.
+  const en = {
+    'meta.json': { name: 'English', regions: ['US'], shards: { words: ['fe'], en: [] } },
+    'words/fe.json': { fetch: [{ word: 'fetch', pos: 'verb', senses: [{ glosses: ['To go and bring back.'], translations: { yy: [{ word: 'holen' }] } }] }] },
+  }
+  const entry = (word: string, extra: object = {}) => [{ word, pos: 'verb', senses: [{ glosses: ['to fetch'], ...extra }] }]
+  const xx = {
+    'meta.json': { name: 'Target', regions: ['North', 'South'], shards: { words: ['wr', 'gr', 'ca', 'sn'], en: ['fe'] }, picks: true },
+    'en/fe.json': { fetch: [{ word: 'wrong', pos: 'verb', gloss: 'to fetch', senseIndex: 0, senses: 9, primary: true }] },
+    'words/wr.json': { wrong: entry('wrong') },
+    'words/gr.json': { grab: entry('grab') },
+    'words/ca.json': { carry: entry('carry') },
+    'words/sn.json': { snatch: entry('snatch', { regions: ['North'] }) },
+    'picks.json': [{ word: 'fetch', pos: 'verb', gloss: 'To go and bring back.', picks: [{ word: 'grab' }, { word: 'carry', tags: ['South'] }, { word: 'snatch', tags: ['North'] }] }],
+  }
+  const yy = {
+    'meta.json': { name: 'Source', regions: ['Here'], shards: { words: ['ho'], en: [] } },
+    'words/ho.json': { holen: [{ word: 'holen', pos: 'verb', senses: [{ glosses: ['to fetch'] }] }] },
+  }
+  const files: Record<string, Record<string, unknown>> = { en, xx, yy }
+  const tr = createTranslator({ load: (lang) => async (p) => files[lang][p] })
+  const words = (groups: { translations: { word: string; bridge: string }[] }[]) =>
+    groups[0].translations.map((t) => (t.bridge === 'picked' ? `${t.word}*` : t.word))
+
+  it('puts picks first, in order, then the ranked words', async () => {
+    assert.deepEqual(words(await tr.translate('fetch', { from: 'en', to: 'xx' })), ['grab*', 'carry*', 'snatch*', 'wrong'])
+  })
+
+  it('returns the ranking alone with picks: false', async () => {
+    assert.deepEqual(words(await tr.translate('fetch', { from: 'en', to: 'xx', picks: false })), ['wrong'])
+  })
+
+  it('puts picks tagged for the target region first and leaves out other regions\' picks', async () => {
+    assert.deepEqual(words(await tr.translate('fetch', { from: 'en', to: 'xx', toRegion: 'South' })), ['carry*', 'grab*', 'wrong'])
+  })
+
+  it('reaches picks from another language through the English meaning', async () => {
+    assert.deepEqual(words(await tr.translate('holen', { from: 'yy', to: 'xx' })), ['grab*', 'carry*', 'snatch*', 'wrong'])
+  })
+})
+
 describe('parts of speech', () => {
   it('names codes and maps English parts of speech to compatible ones', () => {
     assert.equal(posName('adj'), 'Adjective')

@@ -13,6 +13,7 @@ import {
   type Example,
   type Hit,
   type LanguageMeta,
+  type PickRow,
   PRONOUN_PERSONS,
   TRAILING_PARTICLE,
   type PronounChoice,
@@ -57,8 +58,9 @@ export type Translation = Hit & {
   score: number
   /**
    * How this word was found: the English term that linked it, "synonym" for a same-language synonym,
-   * "table" for Wiktionary's translation table, or "pronouns" for a pronoun-table row's words (the
-   * `listener`'s or `about`'s row, or the default row).
+   * "table" for Wiktionary's translation table, "picked" for the target language's hand-picked words
+   * for this meaning (see PickRow), or "pronouns" for a pronoun-table row's words (the `listener`'s or
+   * `about`'s row, or the default row).
    */
   bridge: string
   /** Example sentences for this word in the matched sense, when the dictionary has them. */
@@ -158,6 +160,11 @@ export type TranslateOptions = {
    * translations repeat another sense's. Default false. Useful for letting users pick a meaning.
    */
   allSenses?: boolean
+  /**
+   * Use the target language's hand-picked words (default true). false returns the ranking alone, e.g. to
+   * see what picks change.
+   */
+  picks?: boolean
 }
 
 export type Translator = {
@@ -627,22 +634,34 @@ export function createTranslator(options: TranslatorOptions = {}): Translator {
   // The translation-table words for a source sense in the target language. English senses carry their
   // table; for other languages, the English sense whose table lists the source word (in the source
   // language) is the same meaning, and its target-language list applies.
-  async function tableFor(sense: SourceSense, from: string, to: string, bridge: string[]): Promise<TableTranslation[]> {
-    if (from === 'en') return to === 'en' ? [] : (sense.translations?.[to] ?? [])
-    const found: TableTranslation[] = []
-    const add = (list: TableTranslation[] | undefined) => {
-      for (const t of list ?? []) if (!found.some((f) => f.word === t.word)) found.push(t)
-    }
+  // The English meanings a source sense is: for English, the sense itself; otherwise the English senses
+  // (from the first 3 bridge terms) whose translation table lists the source word, which Wiktionary
+  // gives per English meaning. Translation tables and hand-picked words are keyed by these.
+  type EnglishMeaning = { word: string; pos: string; gloss: string; translations?: Record<string, TableTranslation[]> }
+  async function englishMeanings(sense: SourceSense, from: string, bridge: string[]): Promise<EnglishMeaning[]> {
+    if (from === 'en') return [{ word: sense.lemma, pos: sense.pos, gloss: sense.glosses[0] ?? '', translations: sense.translations }]
+    const found: EnglishMeaning[] = []
     for (const term of bridge.slice(0, 3)) {
       for (const entry of await dict('en').lookup(term)) {
         for (const s of entry.senses) {
           const own = s.translations?.[from]
           if (!own?.some((t) => t.word === sense.lemma || t.word === sense.word)) continue
-          // Into English, the English word whose table lists the source word is itself the translation.
-          if (to === 'en') add([{ word: entry.word }])
-          else add(s.translations?.[to])
+          if (!found.some((f) => f.word === entry.word && f.gloss === s.glosses[0])) {
+            found.push({ word: entry.word, pos: entry.pos, gloss: s.glosses[0], translations: s.translations })
+          }
         }
       }
+    }
+    return found
+  }
+
+  async function tableFor(sense: SourceSense, from: string, to: string, bridge: string[]): Promise<TableTranslation[]> {
+    if (from === 'en') return to === 'en' ? [] : (sense.translations?.[to] ?? [])
+    const found: TableTranslation[] = []
+    for (const m of await englishMeanings(sense, from, bridge)) {
+      // Into English, the English word whose table lists the source word is itself the translation.
+      const list = to === 'en' ? [{ word: m.word }] : (m.translations?.[to] ?? [])
+      for (const t of list) if (!found.some((f) => f.word === t.word)) found.push(t)
     }
     return found
   }
@@ -750,8 +769,12 @@ export function createTranslator(options: TranslatorOptions = {}): Translator {
   const api: Translator = {
     senses,
 
-    async translate(word, { from, to, fromRegion, toRegion, pos, meaning, register: wantedRegister, listener, about, speaker, exclude = DEFAULT_EXCLUDED_LABELS, limit = 5, allSenses = false }) {
+    async translate(word, { from, to, fromRegion, toRegion, pos, meaning, register: wantedRegister, listener, about, speaker, exclude = DEFAULT_EXCLUDED_LABELS, limit = 5, allSenses = false, picks: usePicks = true }) {
       const [sourceSenses, toMeta, fromMeta] = await Promise.all([senses(word, { from, fromRegion, pos }), dict(to).meta(), dict(from).meta()])
+      // The target language's hand-picked words for English meanings (picks.json), when it has any.
+      const pickRows: PickRow[] = usePicks && to !== 'en' && toMeta.picks ? await dict(to).picks() : []
+      // Senses whose pick row asks to come first when the caller gives no pos or meaning.
+      const pickedFirst = new Set<SourceSense>()
       // The target's pronoun table, for personal-pronoun senses (throws for an unknown listener/about).
       const pronounRows: PronounRow[] =
         toMeta.pronouns && sourceSenses.some((s) => personOf(s, from))
@@ -884,6 +907,31 @@ export function createTranslator(options: TranslatorOptions = {}): Translator {
           }
         }
 
+        // Hand-picked words for this meaning go first, in the listed order: a speaker's judgment of the
+        // natural word where the ranking puts another first. With a target region, picks tagged for it
+        // lead, and picks tagged only for other regions (or words not used there) are left to the
+        // ranking. The ranked words follow. (A pronoun-table row, below, still comes before them.)
+        const rows = pickRows.length
+          ? await englishMeanings(sense, from, bridge).then((ms) => pickRows.filter((r) => ms.some((m) => m.word === r.word && m.pos === r.pos && m.gloss === r.gloss)))
+          : []
+        if (rows.some((r) => r.first)) pickedFirst.add(sense)
+        const picked: { hit: Hit; tagged: boolean }[] = []
+        for (const t of rows.flatMap((r) => r.picks)) {
+          if (picked.some((p) => p.hit.word === t.word)) continue
+          const places = tagRegions(t.tags, toMeta)
+          if (toWanted && places && ![...places].some((r) => toWanted.has(r))) continue
+          if (to === from && t.word === sense.lemma && !places?.size) continue
+          const hit = scored.get(t.word) ?? (await tableHit(t.word, to, posList, toWanted, exclude, bridge))
+          if (!hit || hit.labels.some((l) => exclude.includes(l))) continue
+          if (!places && !intersects(hit.regions, toWanted)) continue
+          picked.push({ hit, tagged: Boolean(toWanted && places) })
+        }
+        if (picked.length) {
+          const ordered = [...picked.filter((p) => p.tagged), ...picked.filter((p) => !p.tagged)]
+          const top = Math.max(0, ...[...scored.values()].map((t) => t.score))
+          ordered.forEach(({ hit }, i) => scored.set(hit.word, { ...hit, score: top + 1 + (ordered.length - i) * 0.1, bridge: 'picked' }))
+        }
+
         // Personal pronouns: the chosen row's words go first (the `listener`'s for I/you/we, the `about`'s
         // for he/she/they, else the default row's), fitted to the pronoun's gender (he/she) and
         // inclusiveness (we). Words tagged for the target region, then those fitting the register, lead.
@@ -1003,7 +1051,8 @@ export function createTranslator(options: TranslatorOptions = {}): Translator {
         (ownSenses && g.source.via && SPELLING_VIA.test(g.source.via) ? 2 : 0) +
         (fromRegion && g.source.regionTagged ? 3 : 0) +
         pronounRelevance(g) +
-        labelRelevance(g)
+        labelRelevance(g) +
+        (!meaning && pickedFirst.has(g.source) ? 5 : 0)
       // A sense with no translations says nothing, so it goes after the ones that do ("got": "Expressing
       // obligation; used with have." finds nothing; "Must; have/has (to)." gives "phải").
       const ordered = groups

@@ -8,6 +8,7 @@ import {
   type Entry,
   type Hit,
   type LanguageMeta,
+  type PickRow,
   type StoredPronounRow,
   type WordShard,
 } from './types.ts'
@@ -93,6 +94,8 @@ export type Dictionary = {
    * for languages without a pronoun table.
    */
   pronouns(options?: PronounOptions): Promise<PronounRow[]>
+  /** Hand-picked first choices for English meanings (see PickRow). Empty for languages without any. */
+  picks(): Promise<PickRow[]>
 }
 
 /**
@@ -192,6 +195,11 @@ export function createDictionary(options: DictionaryOptions): Dictionary {
       if (!allSenses) return words
       const kept = new Set(words.map((h) => h.word))
       return ranked.filter((h) => kept.has(h.word))
+    },
+
+    async picks() {
+      const m = await meta()
+      return m.picks ? loadOnce<PickRow[]>('picks.json') : []
     },
 
     async pronouns({ listener, region, speaker, exclude = DEFAULT_EXCLUDED_LABELS } = {}) {

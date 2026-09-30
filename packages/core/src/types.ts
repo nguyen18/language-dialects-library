@@ -89,6 +89,25 @@ export type LanguageMeta = {
   shardLength?: number
   /** true when the language has a pronoun table (pronouns.json, see PronounRow). */
   pronouns?: boolean
+  /** true when the language has hand-picked translations (picks.json, see PickRow). */
+  picks?: boolean
+}
+
+/**
+ * Hand-picked first choices for one English meaning, in one target language (picks.json). A speaker's
+ * judgment of the natural word where the data ranks another first ("get", "To fetch, bring, take" →
+ * Vietnamese "lấy", not "đưa"). Keyed by English meaning, so each language needs one list, and
+ * translating between two other languages reaches it through the English meaning.
+ */
+export type PickRow = {
+  /** The English headword, part of speech and first definition of the meaning, as in the English data. */
+  word: string
+  pos: string
+  gloss: string
+  /** Best first. `tags` name regions like translation-table tags ("Southern"). */
+  picks: TableTranslation[]
+  /** Put this meaning first when the caller gives no `pos` or `meaning` ("got" → "Have/has."). */
+  first?: boolean
 }
 
 /**

@@ -60,11 +60,12 @@ Loads each language's data on demand. The options are only needed to self-host t
 | `exclude` | Labels to leave out (default: vulgar, offensive, derogatory, archaic, obsolete, dated, historical, rare, abbreviation). |
 | `limit` | Translations per meaning (default 5). |
 | `allSenses` | Return every meaning, including ones with no translation, instead of only useful ones. For letting users pick a meaning. |
+| `picks` | Use the target language's [hand-picked words](#hand-picked-words) (default `true`). `false` returns the ranking alone. |
 
 It returns `TranslationGroup[]`, most relevant meaning first. Each group has:
 
 - `source`: the meaning being translated: `lemma` (the base or standard word, e.g. *say* for *said*), `pos`, `glosses` (its English definitions), `regions`, `labels`, and `via` when the word led there ("simple past of say", "Southern Vietnam form of không").
-- `translations`: target words, best first, each with its own `pos`, `gloss`, `regions`, `labels`, a `score`, and `bridge` (how it was found; `'pronouns'` for the listener's words, which also carry `relationship`, e.g. "Your parents").
+- `translations`: target words, best first, each with its own `pos`, `gloss`, `regions`, `labels`, a `score`, and `bridge` (how it was found; `'picked'` for [hand-picked words](#hand-picked-words); `'pronouns'` for the listener's words, which also carry `relationship`, e.g. "Your parents").
 - `pronounUses` (source words in the source language's pronoun table): the relationships the word is used in with this meaning, `{ id, label, person: 'self' | 'addressee', speaker?, regions, note?, warning? }`. Uses no definition covers get a group of their own, translated as "I" or "you": Vietnamese *em* → "I/me, when talking to: someone a bit older (man); …; your teacher" and "you, when talking to: someone younger; …"; *ba* → "you, when talking to: your parents". Pass `pos: 'pron'` to get only these.
 - `relationships` (singular "I"/"you" meanings into a language with a pronoun table): the word for each relationship, `{ id, label, words, warning? }`, filtered by `toRegion`, `speaker` and `exclude`, for showing "it depends on who you're talking to".
 
@@ -83,7 +84,15 @@ Every language's data defines its words in English, so English is the bridge bet
 5. **Within one language, synonyms are direct equivalents.** Wiktionary lists dialect words as synonyms (*ngô* → *bắp*, *lợn* → *heo*, *lift* → *elevator*), in either direction (*dạ* lists *vâng*).
 6. **Ranking** favors **common words** ([word frequencies](#word-frequencies): *anh* over the niche *cô nương* for "you"), target words whose definition shares the source definition's details, whose *main* meaning is the match, that are tagged for the target region, and that keep the **register**: a polite word translates to a polite word (Northern *vâng* → Southern *dạ*), slang to slang.
 
+**Hand-picked words** come before all of these for the meanings that have them (see below).
+
 Meanings are ordered by `meaning` (if given), then by being tagged for `fromRegion`, then the dictionary's own order, which lists main meanings first. That order is a guess when a word has several parts of speech: English *just* is listed as an adjective ("fair") before the adverb. Pass `pos` or `meaning` when you know which one you want.
+
+### Hand-picked words
+
+For common words, a speaker of the target language knows the natural word even where the data ranks another first: *get* "To fetch, bring, take" ranks Vietnamese *đưa* ("to hand, to bring") above *lấy*, because *đưa*'s definition matches more of the English words and no *lấy* definition says "fetch". Each language can list **hand-picked words for English meanings** (`picks` in `languages/<code>.ts`, built into `picks.json`). In a meaning that has picks, the picked words come first (`bridge: 'picked'`), then the ranked words; other meanings are unchanged. Picks can carry a region tag, like translation tables: with `toRegion`, picks tagged for it come first and picks tagged only for other regions are left to the ranking. A pick can also mark its meaning as the one to put first when no `pos` or `meaning` is given.
+
+Picks are keyed by English meaning, so each language needs one list however many languages there are: translating from any other language reaches them through the English meaning (as with translation tables). They're optional: a language without picks uses the ranking alone. `picks: false` shows the ranking alone, and `npm run evaluate` reports both. Vietnamese picks so far: *get* "fetch" → *lấy*, *mang*; *get* "obtain" → *lấy*.
 
 ### How accurate is it?
 
@@ -91,7 +100,7 @@ Meanings are ordered by `meaning` (if given), then by being tagged for `fromRegi
 
 | Set | Correct word in top 3 | Correct word first |
 |---|---|---|
-| Tuning set (used while developing) | 42 / 42 (100%) | 42 / 42 (100%) |
+| Tuning set (used while developing) | 49 / 49 (100%) | 49 / 49 (100%); 48 / 49 without picks |
 | Held-out set (written afterwards, not tuned against) | 17 / 17 (100%) | 16 / 17 (94%) |
 
 The cases involving Spanish were removed with it. The held-out set has since been looked at, so new held-out cases are needed before relying on it (see [`FUTURE_IMPROVEMENTS.md`](FUTURE_IMPROVEMENTS.md)).
@@ -104,6 +113,7 @@ One language's dictionary. `baseUrl` defaults to `https://cdn.jsdelivr.net/npm/w
 
 - `dictionary.lookup(word)`: all entries for a word, with every sense's definitions, regions, labels, synonyms and variant links (`altOf`).
 - `dictionary.searchEnglish(term, { region?, pos?, exclude?, limit?, allSenses? })`: words for an English term in this language, one per word, best first (no meaning handling: use the translator for that). `allSenses: true` returns every matching sense of those words instead.
+- `dictionary.picks()`: the language's [hand-picked words](#hand-picked-words), `{ word, pos, gloss, picks: [{ word, tags? }], first? }` per English meaning (empty for languages without any).
 - `dictionary.meta()`: the language's name, regions, region groups, source, license, build date and counts.
 - `dictionary.pronouns({ listener?, region?, speaker?, exclude? })`: how to say "I", "you", "he/she", "we", plural "you" and "they" depending on who you're talking to (or about), one row per relationship, for languages whose pronouns depend on it (so far Vietnamese; empty for others). Each row has the columns `self`, `addressee`, `third`, `selfPlural`, `addresseePlural` and `thirdPlural`. Each word says where it comes from: a dictionary definition (`source: 'gloss'`, with the `gloss`), a grammar rule for a regular compound the dictionary doesn't list (`source: 'rule'`, e.g. *các anh*, with a `note`), or a hand-written override (`source: 'override'`, with a `note`); and, when it has one, the `gender` of the person it refers to and whether a "we" is `inclusive`.
 
@@ -177,7 +187,10 @@ npm install
 npm run build:data -- vi             # download Kaikki's file for a language (cached in .cache/) and build packages/<code>/data
 npm run build:data -- vi --refresh   # re-download first
 npm test                             # unit tests, plus checks against whichever languages are built
-npm run evaluate                     # translation accuracy on known-correct cases (-- --verbose to see every case)
+npm run evaluate                     # translation accuracy on known-correct cases, with and without picks (-- --verbose to see every case)
+npm run build:picks -- vi            # rebuild only a language's hand-picked words (after editing `picks` in languages/vi.ts)
+npm run picks-sheet -- vi            # review sheet (.cache/picks-vi.csv) of the top English words' meanings; -- --words file.txt, -- --top 500
+npm run picks-sheet -- vi --apply sheet.csv   # config rows for the rows whose your_pick is filled in
 npm run typecheck
 npm run build                        # compile the API to packages/core/dist
 ```
@@ -190,6 +203,7 @@ Generated data isn't committed (it would bloat git history); it's built before p
 2. Copy a data package (`packages/vi`) to `packages/<code>` and update its `package.json` and `README.md`.
 3. Add the language's code to `translationLangs` in `languages/en.ts` (so English keeps its translation tables for it) and rebuild English.
 4. `npm run build:data -- <code>`, check the results, add a few real-data tests and evaluation cases, and publish.
+5. Optional, later: [hand-picked words](#hand-picked-words). A speaker runs `npm run picks-sheet -- <code>`, fills in `your_pick` only where the first choice is wrong, and pastes the `--apply` output into `picks`.
 
 Languages in non-Latin scripts (Chinese, Arabic, Russian, …) will need a script-aware version of `shardKey` first: today files are split by the first two Latin letters.
 

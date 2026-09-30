@@ -291,6 +291,18 @@ const config: LanguageConfig = {
       thirdPlural: [{ word: 'họ', gloss: /^they\/them \(used in formal situations/ }],
     },
   ],
+  // Hand-picked first choices for English meanings (see scripts/picks.ts), reviewed by the owner. Only
+  // where a native speaker knows the natural word and the ranking puts another first.
+  picks: [
+    {
+      word: 'get', pos: 'verb', gloss: /^To fetch, bring, take/, picks: ['lấy', 'mang'],
+      note: 'The ranking gives "đưa" (to hand, to bring): its definition matches more of the English words, and no "lấy" sense says "fetch".',
+    },
+    {
+      word: 'get', pos: 'verb', gloss: /^To obtain; to acquire/, picks: ['lấy'],
+      note: '"được" is common mostly as a helper verb ("được đi"); "lấy" is the everyday word.',
+    },
+  ],
 }
 
 export default config

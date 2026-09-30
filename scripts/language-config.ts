@@ -61,6 +61,27 @@ export type LanguageConfig = {
    * scripts/pronouns.ts). For languages whose pronouns depend on the relationship, like Vietnamese.
    */
   pronouns?: PronounRowConfig[]
+  /**
+   * Hand-picked first choices for English meanings, in this language (see scripts/picks.ts). Optional:
+   * languages without picks use the ranking alone. Only for common words where a speaker knows the
+   * natural word and the ranking puts another first.
+   */
+  picks?: PickRowConfig[]
+}
+
+/**
+ * One English meaning's hand-picked words. `word`, `pos` and `gloss` find the English sense (the build
+ * warns when Wiktionary rewording breaks the match); `picks` are this language's words, best first, as
+ * a word or { word, tags } with region tags ("Southern"). `first` puts the meaning first when the
+ * caller gives no pos or meaning. `note` says why the pick is there.
+ */
+export type PickRowConfig = {
+  word: string
+  pos: string
+  gloss: RegExp
+  picks: (string | { word: string; tags?: string[] })[]
+  first?: boolean
+  note?: string
 }
 
 /**

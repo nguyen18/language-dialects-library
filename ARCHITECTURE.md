@@ -21,6 +21,8 @@ Decisions (2026-09-27, with the owner):
 languages/<lang>.ts          per-language build config (regions, tag → region mapping, filters)
 scripts/build-language.ts    Kaikki JSONL → packages/<lang>/data
 scripts/language-config.ts   LanguageConfig type
+scripts/picks.ts             hand-picked words: checks config rows, writes picks.json (npm run build:picks)
+scripts/picks-sheet.ts       review sheet for picks, and --apply to turn it into config rows
 packages/core/               npm "which-dialect": the API (src/index.ts), shared types (src/types.ts),
                              parts of speech (src/pos.ts), translator (src/translate.ts)
 packages/core/test/          node:test tests (fake-data ranking tests + real-data checks when built)
@@ -36,6 +38,7 @@ npm workspaces; TypeScript everywhere. Scripts and tests run directly with `node
 - `data/words/<xx>.json`: `WordShard`, headword → `StoredEntry[]`.
 - `data/en/<xx>.json`: `EnglishShard`, normalized English term → `StoredHit[]`.
 - `data/pronouns.json` (only when `meta.pronouns`): `StoredPronounRow[]`, see "Pronoun table".
+- `data/picks.json` (only when `meta.picks`): `PickRow[]`, see "Hand-picked words".
 - **Stored vs. full form:** files store `StoredSense`/`StoredHit`, where an **untagged sense omits `regions`** (meaning every region, `regionTagged: false`) and empty `labels` are omitted. `toStored()` (build) and `fromStored(item, meta.regions)` (API) convert. Consumers only ever see full `Sense`/`Entry`/`Hit`. This matters most for languages with many regions (listing every region on every untagged sense bloats the data); Vietnamese shrank from 19.6 to 12.2 MB.
 - `Sense`: `glosses`, `regions`, `regionTagged`, `labels`, optional `altOf`.
 - `Hit`: word, pos, gloss, regions, regionTagged, labels, altOf, `senseIndex`, `senses` (the word's total sense count), `primary`.
@@ -149,6 +152,28 @@ English *got* has its own entries ("Expressing obligation; used with have.", "Mu
 - **List definitions** (`isTermList` in `bridgeTerms`): when the first definition is only a short list of equivalents (every comma/semicolon part a term of ≤ 3 words: "To fetch, bring, take."), all its terms are main terms, not just the first. *get* "To fetch, bring, take" gave hóng, bắt, ra khỏi (found only through the ambiguous "get" itself); now **đưa, lấy**, hóng. *lấy* isn't first because *đưa* ("to bring, to take, to give, to hand") matches two of the three terms and no *lấy* sense says "fetch" (a data gap; the planned picks layer covers it, see FUTURE_IMPROVEMENTS.md). Top-100 comparison: top word changed only for *now* ("Present; current" → hiện tại, was đưa ra); 2nd/3rd picks improved elsewhere (still "Not moving" → im; cool "Unenthusiastic" → hờ hững; just → chính xác). Known noise: *do* "To perform; to execute" → *tử hình* 3rd (execute = put to death; làm still first).
 - **Meaning frequency isn't available:** Wiktionary translation-table sizes looked like a signal but tables are often on the wrong meaning (see FUTURE_IMPROVEMENTS.md), so the dictionary's order stays the default.
 
+## Hand-picked words ("picks", added 2026-09-30)
+
+A speaker's first choice for common English meanings, where the ranking puts another word first (*get* "To fetch, bring, take" → *lấy*, not *đưa*). Designed with the owner to scale to many languages (see "Working conventions"):
+
+- **Config:** `LanguageConfig.picks`: `PickRowConfig { word, pos, gloss: RegExp, picks: (string | { word, tags? })[], first?, note? }` in the **target** language's config, keyed by **English meaning** (English headword + part of speech + a definition pattern). One list per language, never per pair. Vietnamese: *get* "fetch" → lấy, mang; *get* "obtain" → lấy.
+- **Build** (`scripts/picks.ts`, `writePicks`, called at the end of `build-language.ts` and standalone as `npm run build:picks -- <lang>` so editing picks doesn't need a data rebuild): finds each row's English sense in the **built English data** (skipped with a warning if English isn't built), stores that sense's exact first gloss, checks each word exists in the language, writes `picks.json` (`PickRow { word, pos, gloss, picks: TableTranslation[], first? }`) and sets `meta.picks`. Warns (doesn't fail) for rows matching no sense, several senses (uses the first), or unknown words, like the pronoun table.
+- **API:** `dictionary.picks()` (loaded on demand, `[]` without `meta.picks`).
+- **Translator:** `englishMeanings(sense, from, bridge)` (factored out of `tableFor`, unchanged behavior) gives the English meanings of a source sense: an English sense itself, or the English senses whose translation table lists the source word. Rows match by exact word + pos + gloss. Picked words go first in the group, in listed order (`bridge: 'picked'`, score above the top ranked word); with `toRegion`, tagged-for-target picks lead, and picks tagged only for other regions, or untagged picks whose sense isn't used there, are left to the ranking; excluded labels are respected; within one language the source word itself isn't picked unless tagged for the target region. Ranked words follow; `limit` applies to both. A pronoun-table row (listener/about/default) still goes before picks. `first: true` gives the meaning +5 relevance when no `meaning` is given. `picks: false` turns them off. Not applied into English (picks are keyed by English meaning).
+- **Review loop** (`npm run picks-sheet -- <lang>`): a CSV (default `.cache/picks-<lang>.csv`) of the top English words (`topWords()` in `frequency.ts`, from wordfreq; or `--words file`) × up to 4 meanings each: English word, pos, meaning, the ranking's top 3 (picks off), Wiktionary table words, current pick, empty `your_pick`. `--apply file.csv` prints config rows (`"heo (Southern) / lợn"` → tagged picks). Top-100 list: 313 meanings, under a second.
+- **Evaluation** runs each set with and without picks and breaks results down by target language: tuning 49/49 first with picks, 48/49 without (the new *get* [fetch] case: the ranking alone gives đưa); held-out unchanged.
+- **Tests:** fake-data tests for order, `picks: false`, region tags and reaching picks from another language through the English meaning (35 tests).
+- **Compatibility:** additive. Old API versions ignore `picks.json`; the new API with old data sees no `meta.picks`. `DATA_VERSION` unchanged. `picks.json` is generated data, so it reaches users when the language's data package is republished.
+- **How it scales** (the owner's requirement for every feature):
+  1. **Optional per language:** a language without picks uses the ranking alone; adding a language never requires picks.
+  2. **One list per language:** keyed by English meaning, so N languages need N lists, not N² pair lists; other languages reach them through the English meaning (`englishMeanings`).
+  3. **Lives with the language, not the API:** rows in `languages/<lang>.ts`, data in that language's package (`picks.json`), loaded on demand; the API doesn't grow with languages, and picks are versioned with their data.
+  4. **Machine-drafted, speaker-reviewed:** the sheet does the drafting for any language; only reviewing grows with languages, and that's the part that needs a speaker.
+  5. **Frequency first:** top 100 English words, then 500 (`--top 500`), 1000.
+  6. **Survives data refreshes:** rows match by word + pos + definition pattern, and the build warns per language when one stops matching.
+  7. **Measured per language:** `npm run evaluate` with and without picks, broken down by target language.
+  8. **Upstream when possible:** Wiktionary's table format, so good picks can go into Wiktionary's translation tables.
+
 ## Pronoun table (added 2026-09-30)
 
 Vietnamese pronouns depend on the relationship (*con* = I, to a parent; *anh* = you, an older man), so the translator can't pick one from "I" alone (it ranked *tôi* 27th). The owner asked for a "who are you talking to? / you say I / you call them you" chart. Decided with the owner: store the **chart itself** keyed by relationship, not per-word tags, because pairs go together (*tao*/*mày*), some choices depend on the speaker's gender, and warnings belong to the situation.
@@ -171,7 +196,7 @@ Vietnamese pronouns depend on the relationship (*con* = I, to a parent; *anh* = 
 
 ## Evaluation (`scripts/evaluate.ts`, `npm run evaluate`)
 
-Known-correct cases; pass = a correct word in the top 3 of the first (most relevant) sense group. `CASES` (tuning set, 75) was used while developing; `HOLDOUT` (30) was written afterwards and **must not be tuned against** (add new holdout cases instead if it gets used). Results 2026-09-30 (Vietnamese and English cases only): tuning **48/48** (all correct first; 42 before the "want" and "got" cases), held-out **17/17** (16 first). Earlier numbers in this file (e.g. 73/75 and 29/30 on 2026-09-27) included cases for a language that has since been removed. Held-out *bát* (vi N→S, which gave *mai*, not *chén*) passes since the 2026-09-30 ranking fixes. Note: held-out *sleep* started passing after a general bug fix ("etc" was being used as a search term), which was found while generating Language Helper's Cheatsheet, not by looking at *sleep*; still, the held-out set is no longer perfectly clean, so add fresh cases before relying on it again. Progression while tuning: 91% → 93% (synonyms, secondary-sense penalty) → 95% (dictionary order restored) → 97% (reverse synonyms, phrase heads). Unit tests (`npm test`, 31) include translator checks on real data when en and vi are built.
+Known-correct cases; pass = a correct word in the top 3 of the first (most relevant) sense group. `CASES` (tuning set, 75) was used while developing; `HOLDOUT` (30) was written afterwards and **must not be tuned against** (add new holdout cases instead if it gets used). Results 2026-09-30 (Vietnamese and English cases only): tuning **49/49** (all correct first; 48/49 without picks; 42 before the "want", "got" and "get" cases), held-out **17/17** (16 first). Earlier numbers in this file (e.g. 73/75 and 29/30 on 2026-09-27) included cases for a language that has since been removed. Held-out *bát* (vi N→S, which gave *mai*, not *chén*) passes since the 2026-09-30 ranking fixes. Note: held-out *sleep* started passing after a general bug fix ("etc" was being used as a search term), which was found while generating Language Helper's Cheatsheet, not by looking at *sleep*; still, the held-out set is no longer perfectly clean, so add fresh cases before relying on it again. Progression while tuning: 91% → 93% (synonyms, secondary-sense penalty) → 95% (dictionary order restored) → 97% (reverse synonyms, phrase heads). Unit tests (`npm test`, 31) include translator checks on real data when en and vi are built.
 
 ## Known limitations / tuning notes
 

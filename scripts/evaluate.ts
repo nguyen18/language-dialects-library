@@ -3,7 +3,9 @@
 //   node --experimental-strip-types scripts/evaluate.ts [--verbose]
 //
 // Uses the built data in packages/<lang>/data (build en and vi first). A case passes when one of
-// its expected words is in the top 3 of the first (most relevant) translation group.
+// its expected words is in the top 3 of the first (most relevant) translation group. Each set is run
+// with hand-picked words (the default) and without them (the ranking alone), and broken down by
+// target language.
 
 import { readFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
@@ -45,6 +47,8 @@ export const CASES: Case[] = [
   c(pair('en', undefined, 'vi', undefined), 'got', ['phải'], { meaning: 'must' }),
   // "lấy", not "được" ("to obtain, to get (passively)"; common mostly as a helper verb).
   c(pair('en', undefined, 'vi', undefined), 'get', ['lấy']),
+  // A hand-picked word (languages/vi.ts picks): the ranking alone gives "đưa" first.
+  c(pair('en', undefined, 'vi', undefined), 'get', ['lấy'], { meaning: 'fetch' }),
   c(enViS, 'said', ['nói']),
   c(enViS, 'computer', ['máy tính', 'máy vi tính']),
   c(enViS, 'corn', ['bắp']),
@@ -108,17 +112,22 @@ export const HOLDOUT: Case[] = [
   c(pair('vi', 'Northern', 'vi', 'Southern'), 'quả', ['trái']),
 ]
 
-async function run(cases: Case[], title: string, verbose: boolean, tr: ReturnType<typeof createTranslator>) {
+async function run(cases: Case[], title: string, verbose: boolean, tr: ReturnType<typeof createTranslator>, picks = true) {
   let pass = 0
   let first = 0
+  // Per target language, so each language's quality is visible as languages are added.
+  const byLang = new Map<string, { n: number; pass: number; first: number }>()
   console.log(`\n${title}`)
   for (const kase of cases) {
     const { word, expect, ...options } = kase
-    const groups = await tr.translate(word, options)
+    const groups = await tr.translate(word, { ...options, picks })
     const top = groups[0]?.translations.slice(0, 3).map((t) => t.word) ?? []
     const ok = top.some((w) => expect.includes(w))
+    const isFirst = expect.includes(top[0])
     if (ok) pass++
-    if (expect.includes(top[0])) first++
+    if (isFirst) first++
+    const lang = byLang.get(options.to) ?? { n: 0, pass: 0, first: 0 }
+    byLang.set(options.to, { n: lang.n + 1, pass: lang.pass + Number(ok), first: lang.first + Number(isFirst) })
     const label = `${options.from}${options.fromRegion ? `(${options.fromRegion})` : ''} → ${options.to}${options.toRegion ? `(${options.toRegion})` : ''}  ${word}${options.meaning ? ` [${options.meaning}]` : ''}${options.pos ? ` <${options.pos}>` : ''}`
     if (verbose || !ok) console.log(`${ok ? '✓' : '✗'} ${label.padEnd(58)} ${top.join(', ') || '(nothing)'}${ok ? '' : `   expected: ${expect.join(' / ')}`}`)
   }
@@ -126,6 +135,9 @@ async function run(cases: Case[], title: string, verbose: boolean, tr: ReturnTyp
     `${pass}/${cases.length} passed (${Math.round((100 * pass) / cases.length)}%); ` +
       `correct word first: ${first}/${cases.length} (${Math.round((100 * first) / cases.length)}%)`,
   )
+  if (byLang.size > 1) {
+    console.log('  by target language: ' + [...byLang].map(([l, r]) => `${l} ${r.pass}/${r.n} (${r.first} first)`).join(', '))
+  }
   return pass
 }
 
@@ -136,6 +148,9 @@ async function main() {
   })
   await run(CASES, 'Tuning set', verbose, tr)
   await run(HOLDOUT, 'Held-out set (not tuned against)', verbose, tr)
+  // Without hand-picked words: what the ranking does on its own (picks must not hide ranking problems).
+  await run(CASES, 'Tuning set, ranking only (picks off)', verbose, tr, false)
+  await run(HOLDOUT, 'Held-out set, ranking only (picks off)', verbose, tr, false)
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) main()
