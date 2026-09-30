@@ -424,10 +424,15 @@ function bridgeTerms(sense: SourceSense, from: string): { terms: string[]; synon
   }
   // Headings ("As a copulative verb:") carry no meaning, so the specific definitions are used.
   const glosses = sense.glosses.filter((g) => !g.trim().endsWith(':'))
+  // A first definition that is only a short list of equivalents ("To fetch, bring, take.") names the
+  // meaning with every item equally, so all of them are main terms ("take" → "lấy" scored no position
+  // bonus, and words found only through the ambiguous "get" itself came first: hóng, bắt, ra khỏi).
   glosses.slice(0, 2).forEach((gloss, gi) => {
-    for (const [term, position] of glossTerms(gloss)) {
+    const found = glossTerms(gloss)
+    const list = gi === 0 && isTermList(gloss, found.length)
+    for (const [term, position] of found) {
       terms.push(term)
-      if (gi === 0 && position === 0) main.add(term)
+      if (gi === 0 && (position === 0 || list)) main.add(term)
     }
   })
   const unique = [...new Set(terms)]
@@ -440,6 +445,12 @@ function bridgeTerms(sense: SourceSense, from: string): { terms: string[]; synon
     }
   }
   return { terms: unique.slice(0, 8), synonymsFrom, main }
+}
+
+// Every comma/semicolon part of the definition became a term, and each is at most three words.
+function isTermList(gloss: string, termCount: number): boolean {
+  const parts = gloss.replace(/\.\s*$/, '').split(/[;,]/)
+  return termCount >= 2 && parts.length === termCount && parts.every((p) => p.trim().split(/\s+/).length <= 3)
 }
 
 export function createTranslator(options: TranslatorOptions = {}): Translator {
