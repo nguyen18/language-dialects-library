@@ -65,7 +65,7 @@ type KaikkiEntry = {
 
 // Synonyms kept per sense; enough for dialect equivalents without bloating large languages.
 const MAX_SYNONYMS = 8
-// Translation-table tags worth keeping: places (capitalized, e.g. Spain, Latin-America) and register.
+// Translation-table tags worth keeping: places (capitalized, e.g. South, North-America) and register.
 // Grammatical tags (masculine, direct-object, …) are dropped.
 const TABLE_REGISTER_TAGS = new Set(['colloquial', 'informal', 'formal', 'polite', 'familiar', 'slang', 'vulgar', 'archaic', 'dated', 'rare', 'literary'])
 const MAX_TABLE_WORDS = 12

@@ -50,7 +50,7 @@ export type DictionaryOptions = {
 export type SearchOptions = {
   /**
    * Only return words used in this region, or in any region of a group (see meta().regions and
-   * meta().regionGroups, e.g. Spanish "Mexico" or "Latin America"). Untagged words count as every region.
+   * meta().regionGroups, e.g. Vietnamese "Southern" or English "North America"). Untagged words count as every region.
    */
   region?: string
   /** Only return these parts of speech (Wiktionary codes, see POS_NAMES), e.g. ['verb']. */
@@ -96,7 +96,7 @@ export type Dictionary = {
 }
 
 /**
- * The regions a region or region-group name stands for (e.g. Spanish "Latin America" -> its countries),
+ * The regions a region or region-group name stands for (e.g. English "North America" -> US, Canada),
  * or null when no region is given. Throws for names the language doesn't have, listing the valid ones.
  */
 export function resolveRegion(meta: LanguageMeta, region: string | undefined): Set<string> | null {

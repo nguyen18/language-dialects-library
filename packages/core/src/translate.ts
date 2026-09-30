@@ -1,7 +1,7 @@
 // Translating between any two languages and dialects, meaning by meaning.
 //
 // Every language's data defines its words in English (Wiktionary glosses), so English is the bridge:
-// a source word's senses each give English terms ("guagua" -> "bus"), and the target language is searched
+// a source word's senses each give English terms ("bắp" -> "corn"), and the target language is searched
 // for those terms with a compatible part of speech, in the target region. Each source sense is translated
 // on its own, so a word's meanings don't get mixed up ("cool" the temperature vs. "cool" the compliment).
 
@@ -124,7 +124,7 @@ export type TranslateOptions = {
   from: string
   /** Target language code, e.g. "en". Can equal `from` to translate between dialects of one language. */
   to: string
-  /** Region or region group the source word is from, e.g. "Mexico". Keeps only senses used there. */
+  /** Region or region group the source word is from, e.g. "Northern". Keeps only senses used there. */
   fromRegion?: string
   /** Region or region group to translate into, e.g. "Southern". Words tagged for it rank first. */
   toRegion?: string
@@ -213,7 +213,7 @@ export const FREQUENCY_WEIGHT = 1.2
 const RARE_ZIPF = 3.5
 
 // The region bonus is deliberately NOT scaled by frequency: wordfreq counts worldwide text, where
-// regional words are rare even when they're the everyday word in their region (Cuban "guagua" for bus).
+// regional words are rare even when they're the everyday word in their region.
 // Scaling it was tried (2026-09-27) and lost those words.
 
 function commonness(hit: { frequency?: number; senses: number }, hasFrequencies: boolean): number {
@@ -222,8 +222,8 @@ function commonness(hit: { frequency?: number; senses: number }, hasFrequencies:
 }
 
 // Wiktionary's translation tables list the usual translation of each English meaning, per language,
-// with region tags (car → es: coche [Spain], carro [Mexico, …]). Being listed for the matched meaning is
-// the strongest evidence a word is the right, common translation.
+// with region and register tags ("I" → vi: tôi, tớ [informal], tui [South]). Being listed for the
+// matched meaning is the strongest evidence a word is the right, common translation.
 const TABLE_BONUS = 4
 const TABLE_REGION_BONUS = 1.5
 const TABLE_OTHER_REGION_PENALTY = 2
@@ -666,7 +666,7 @@ export function createTranslator(options: TranslatorOptions = {}): Translator {
       from: 'en', to: o.to, toRegion: o.toRegion, register: o.register, listener: o.listener, about: o.about, speaker: o.speaker, exclude: o.exclude, limit: o.limit,
     })
     const found = (groups.find((g) => personOf(g.source, 'en')?.person === person) ?? groups[0])?.translations ?? []
-    // Pronouns only, when there are any (English "I" into Spanish also finds the letter, "i latina").
+    // Pronouns only, when there are any (English "I" also finds letter names, like Vietnamese "i ngắn").
     const pronouns = found.filter((t) => t.pos === 'pron')
     return pronouns.length ? pronouns : found
   }
@@ -736,8 +736,8 @@ export function createTranslator(options: TranslatorOptions = {}): Translator {
             const rank = wordRank.get(hit.word)!
             // Translating between dialects of one language: the word itself only counts if it's tagged for the target region.
             if (to === from && hit.word === sense.lemma && toWanted && !hit.regionTagged) return
-            // A word found through a secondary sense ("borona": millet, and also corn) is a weaker match
-            // than one whose main sense is the bridge term ("maíz": corn). With frequency data this matters
+            // A word found through a secondary sense (the bridge term is only a side meaning of it) is a weaker
+            // match than one whose main sense is the bridge term. With frequency data this matters
             // less (common words win anyway), and kinship words list "you" after "I/me" (Vietnamese "anh"),
             // so the penalty is small then.
             const score =
@@ -768,15 +768,16 @@ export function createTranslator(options: TranslatorOptions = {}): Translator {
           const otherRegion = Boolean(toWanted && places && ![...places].some((r) => toWanted.has(r)))
           let hit: Hit | null | undefined = scored.get(t.word)
           // Another region's word that the dictionary didn't find for this region isn't looked up: its
-          // senses here are likely something else (Peruvian "cancha", popcorn, is a pitch in Mexico).
+          // senses here are likely something else (a word can mean one thing in one region, another
+          // elsewhere).
           if (!hit && !otherRegion) hit = await tableHit(t.word, to, posList, toWanted, exclude, bridge)
           if (!hit) continue
           const regionFit = !toWanted || !places ? 0 : otherRegion ? -TABLE_OTHER_REGION_PENALTY : TABLE_REGION_BONUS
           // The table's register tags count when the dictionary sense has no register of its own (the
           // table marks "ta" and "tớ" informal for "I"; their dictionary senses don't say).
           const tagFit = register(hit.labels) ? 0 : registerFit(sense.labels, t.tags ?? [], wantedRegister)
-          // A word only the table found (e.g. the dictionary tags "auto" Mexico but the table says
-          // Argentina) starts like a main-meaning match from the first bridge term (2 + 1).
+          // A word only the table found (e.g. filed under another part of speech: "thanks" → "cám ơn", a
+          // verb) starts like a main-meaning match from the first bridge term (2 + 1).
           const base = scored.get(t.word)?.score ?? 3 + commonness(hit, hasFrequencies) + registerFit(sense.labels, hit.labels, wantedRegister)
           scored.set(t.word, { ...hit, score: base + TABLE_BONUS + regionFit + tagFit, bridge: 'table' })
         }
@@ -880,12 +881,13 @@ export function createTranslator(options: TranslatorOptions = {}): Translator {
       // Most relevant sense first: one matching `meaning`; then one tagged for the source region (the
       // regional sense is what makes the word worth asking about); then mainstream before slang;
       // otherwise the dictionary's order. Pass `pos` or `meaning` when you know the sense you want.
-      // Translation scores aren't used to order senses: definition overlap inflates minor senses
-      // ("coche": carriage, coach), so the dictionary's order (main meanings first) decides.
+      // Translation scores aren't used to order senses: definition overlap inflates minor senses (a rare
+      // sense can share many words with its translation), so the dictionary's order (main meanings
+      // first) decides.
       const ownSenses = sourceSenses.some((s) => !s.via)
       // `meaning` is matched against the sense's own definitions, and also against its top translation's
       // definition: English words the source definition doesn't use can still describe the target word
-      // ("cool": "Fashionable; trendy; hip" never says "awesome", but its translation "guay" is "cool, great").
+      // ("cool": "Fashionable; trendy; hip" never says "awesome", but a translation's definition can).
       // Personal pronouns into a language with a pronoun table: a listener/about says the caller means
       // that person. A word with both singular and plural person senses ("you": Wiktionary lists the
       // plural first) puts the plural ones after the others. Singular ones aren't raised: "bố" is

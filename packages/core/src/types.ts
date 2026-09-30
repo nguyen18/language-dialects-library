@@ -17,7 +17,7 @@ export type Sense = {
   altOf?: string
   /**
    * Same-language words with this meaning, from Wiktionary: often the other dialects' words
-   * (Vietnamese "ngô" -> "bắp", Spanish "coche" -> "carro", English "lift" -> "elevator").
+   * (Vietnamese "ngô" -> "bắp", "lợn" -> "heo", English "lift" -> "elevator").
    */
   synonyms?: string[]
   /** Example sentences from Wiktionary, with an English translation for non-English languages. */
@@ -25,7 +25,7 @@ export type Sense = {
   /**
    * English senses only: Wiktionary's translation table for this meaning, by language code: the words
    * editors list as the usual translation of exactly this sense, with region/register tags when given
-   * (e.g. car → es: coche [Spain], carro [Mexico, …]).
+   * (e.g. "I" → vi: tôi, tớ [informal], tui [South]).
    */
   translations?: Record<string, TableTranslation[]>
 }
@@ -71,10 +71,10 @@ export type LanguageMeta = {
   lang: string
   /** English name, e.g. "Vietnamese". */
   name: string
-  /** The language's regions, e.g. ["Northern", "Central", "Southern"], or countries for Spanish. */
+  /** The language's regions, e.g. ["Northern", "Central", "Southern"], or countries for English. */
   regions: string[]
   /**
-   * Named groups of regions that can be searched as one, e.g. Spanish "Latin America" or "Caribbean".
+   * Named groups of regions that can be searched as one, e.g. English "North America" or "British Isles".
    * Omitted when the language has none.
    */
   regionGroups?: Record<string, string[]>
