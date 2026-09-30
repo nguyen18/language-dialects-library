@@ -99,6 +99,16 @@ One language's dictionary. `baseUrl` defaults to `https://cdn.jsdelivr.net/npm/w
 - `dictionary.lookup(word)`: all entries for a word, with every sense's definitions, regions, labels, synonyms and variant links (`altOf`).
 - `dictionary.searchEnglish(term, { region?, pos?, exclude?, limit? })`: words for an English term in this language, one per word, best first (no meaning handling: use the translator for that).
 - `dictionary.meta()`: the language's name, regions, region groups, source, license, build date and counts.
+- `dictionary.address({ listener?, region?, speaker?, exclude? })`: how to say "I" and "you" depending on who you're talking to, one row per relationship, for languages whose pronouns depend on it (so far Vietnamese; empty for others). Each word says whether it comes from a dictionary definition (`source: 'gloss'`, with the `gloss`) or a hand-written override (`source: 'override'`, with a `note`).
+
+```js
+const vi = createDictionary({ lang: 'vi' })
+const [parents] = await vi.address({ listener: 'parent', region: 'Southern' })
+parents.self.map((c) => c.word)      // ['con']
+parents.addressee.map((c) => c.word) // ['ba', 'má', 'mẹ']
+```
+
+Vietnamese rows: `friend`, `close-friend`, `older-male`, `older-female`, `younger`, `parent`, `parents-age`, `grandparents-age`, `teacher`, `partner`, `formal`. `speaker: 'male' | 'female'` resolves choices like *anh* vs *chị* toward someone younger.
 
 ## Parts of speech
 

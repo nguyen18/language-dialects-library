@@ -2,10 +2,12 @@ import {
   fromStored,
   normalizeEnglish,
   shardKey,
+  type AddressRow,
   type EnglishShard,
   type Entry,
   type Hit,
   type LanguageMeta,
+  type StoredAddressRow,
   type WordShard,
 } from './types.ts'
 
@@ -58,6 +60,17 @@ export type SearchOptions = {
   limit?: number
 }
 
+export type AddressOptions = {
+  /** Only this relationship's row, by id (e.g. "parent"). Unknown ids throw, listing the valid ones. */
+  listener?: string
+  /** Only words used in this region or region group; untagged words count as every region. */
+  region?: string
+  /** Drop words only the other gender uses ("anh" vs "chị" toward someone younger). */
+  speaker?: 'male' | 'female'
+  /** Labels to leave out. Defaults to DEFAULT_EXCLUDED_LABELS; pass [] to include everything. */
+  exclude?: string[]
+}
+
 export type Dictionary = {
   /** The language's name, regions, source, license and counts. */
   meta(): Promise<LanguageMeta>
@@ -68,6 +81,11 @@ export type Dictionary = {
    * words the source tags for that region rank ahead of untagged ones.
    */
   searchEnglish(term: string, options?: SearchOptions): Promise<Hit[]>
+  /**
+   * How to say "I" and "you" depending on who you're talking to, one row per relationship, for languages
+   * whose pronouns depend on it (Vietnamese). Empty for languages without an address table.
+   */
+  address(options?: AddressOptions): Promise<AddressRow[]>
 }
 
 /**
@@ -164,6 +182,28 @@ export function createDictionary(options: DictionaryOptions): Dictionary {
       // One result per word: its best-ranked sense.
       const seen = new Set<string>()
       return ranked.filter((h) => !seen.has(h.word) && seen.add(h.word)).slice(0, limit)
+    },
+
+    async address({ listener, region, speaker, exclude = DEFAULT_EXCLUDED_LABELS } = {}) {
+      const m = await meta()
+      if (!m.address) return []
+      const rows = await loadOnce<StoredAddressRow[]>('address.json')
+      if (listener && !rows.some((r) => r.id === listener)) {
+        throw new Error(`which-dialect: unknown listener "${listener}" for ${m.name}. Use one of: ${rows.map((r) => r.id).join(', ')}`)
+      }
+      const wanted = resolveRegion(m, region)
+      const excluded = new Set(exclude)
+      const keep = (c: AddressRow['self'][number]) =>
+        (!wanted || c.regions.some((r) => wanted.has(r))) &&
+        (!speaker || !c.speaker || c.speaker === speaker) &&
+        !c.labels.some((l) => excluded.has(l))
+      return rows
+        .filter((r) => !listener || r.id === listener)
+        .map((r) => ({
+          ...r,
+          self: r.self.map((c) => fromStored(c, m.regions)).filter(keep),
+          addressee: r.addressee.map((c) => fromStored(c, m.regions)).filter(keep),
+        }))
     },
   }
 }
