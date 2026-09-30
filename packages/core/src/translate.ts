@@ -322,6 +322,13 @@ function narrows(parenthetical: string, context: Set<string>): boolean {
   return contentWords(parenthetical).size > 0 && !USAGE_NOTE.test(parenthetical) && overlap(context, parenthetical) === 0
 }
 
+// A target sense marked passive ("được": "to obtain, to get (passively)") is a different voice from an
+// active source meaning ("get": "To obtain; to acquire", where "lấy" is the everyday word). Sized to
+// offset a very common word's frequency: "được" is common mostly as a helper verb ("được đi", "làm
+// được"), and frequency is per word, not per meaning.
+const PASSIVE = /\bpassive(?:ly)?\b/i
+const VOICE_MISMATCH_PENALTY = 3
+
 function exactGloss(gloss: string, term: string, context: Set<string>): boolean {
   // "to wait for" is plain "wait", but a part with a narrowing parenthetical isn't ("to want to (…)").
   // Like glossTerms, only the text after a colon is the meaning ("Used as an answer …: no"). A question
@@ -802,7 +809,8 @@ export function createTranslator(options: TranslatorOptions = {}): Translator {
             const score =
               3 * overlap(ctx, hit.gloss) +
               (isMain && exactGloss(hit.gloss, term, ctx) ? EXACT_GLOSS_BONUS : 0) -
-              (narrowed(hit.gloss, term, ctx) ? NARROWED_PENALTY : 0) +
+              (narrowed(hit.gloss, term, ctx) ? NARROWED_PENALTY : 0) -
+              (PASSIVE.test(hit.gloss) && !PASSIVE.test(sense.glosses.join(' ')) ? VOICE_MISMATCH_PENALTY : 0) +
               (isMain ? 2 : termIndex === 1 ? 1 : 0) +
               (hit.primary ? 1 : 0) +
               // Tagged for the target region: a full bonus when the match is the word's main meaning, a

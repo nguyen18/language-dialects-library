@@ -43,7 +43,8 @@ export const CASES: Case[] = [
   // A form's own colloquial meanings ("got": "Have/has.", "Must; have/has (to).") before its base word's.
   c(pair('en', undefined, 'vi', undefined), 'got', ['có']),
   c(pair('en', undefined, 'vi', undefined), 'got', ['phải'], { meaning: 'must' }),
-  c(pair('en', undefined, 'vi', undefined), 'get', ['được', 'lấy', 'nhận']),
+  // "lấy", not "được" ("to obtain, to get (passively)"; common mostly as a helper verb).
+  c(pair('en', undefined, 'vi', undefined), 'get', ['lấy']),
   c(enViS, 'said', ['nói']),
   c(enViS, 'computer', ['máy tính', 'máy vi tính']),
   c(enViS, 'corn', ['bắp']),
