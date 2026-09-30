@@ -6,7 +6,7 @@
 // on its own, so a word's meanings don't get mixed up ("cool" the temperature vs. "cool" the compliment).
 
 import { compatiblePos } from './pos.ts'
-import { glossTerms, normalizeEnglish, type Example, type Hit, type LanguageMeta, type TableTranslation } from './types.ts'
+import { glossTerms, normalizeEnglish, type Example, type Hit, type LanguageMeta, type Sense, type TableTranslation } from './types.ts'
 import {
   createDictionary,
   DEFAULT_EXCLUDED_LABELS,
@@ -445,29 +445,42 @@ export function createTranslator(options: TranslatorOptions = {}): Translator {
     const out = new Set<string>()
     for (const tag of tags ?? []) {
       const name = tag.replace(/-/g, ' ')
+      // Tables sometimes shorten the region name ("South" for Vietnamese "Southern"): a tag that begins
+      // exactly one region's name counts as that region.
+      const prefixed = name.length >= 4 ? meta.regions.filter((r) => r.startsWith(name)) : []
       if (meta.regions.includes(name)) out.add(name)
-      else for (const r of meta.regionGroups?.[name] ?? []) out.add(r)
+      else if (meta.regionGroups?.[name]) for (const r of meta.regionGroups[name]) out.add(r)
+      else if (prefixed.length === 1) out.add(prefixed[0])
     }
     return out.size ? out : null
   }
 
   // A table word the index didn't find: look it up in the target dictionary for its details. A compatible
   // part of speech is preferred, but the table is evidence for this exact meaning, so any part of speech
-  // will do ("thanks" is an interjection; Vietnamese files "cám ơn" as a verb, "to thank").
-  async function tableHit(word: string, to: string, posList: string[], wanted: Set<string> | null, exclude: string[]): Promise<Hit | null> {
+  // will do ("thanks" is an interjection; Vietnamese files "cám ơn" as a verb, "to thank"). A usable sense
+  // whose definition contains a bridge term comes first, from any entry ("ta" is listed for "I": its
+  // "I/me" sense, not its first, "we; us"), then the first usable sense.
+  async function tableHit(word: string, to: string, posList: string[], wanted: Set<string> | null, exclude: string[], bridge: string[]): Promise<Hit | null> {
     const entries = await dict(to).lookup(word)
     const ordered = [...entries.filter((e) => posList.includes(e.pos)), ...entries.filter((e) => !posList.includes(e.pos))]
-    for (const entry of ordered) {
-      const index = entry.senses.findIndex((s) => !s.altOf && intersects(s.regions, wanted) && !s.labels.some((l) => exclude.includes(l)))
-      const s = entry.senses[Math.max(index, 0)]
-      if (!s) continue
-      return {
-        word: entry.word, pos: entry.pos, gloss: s.glosses[0], regions: s.regions, regionTagged: s.regionTagged,
-        labels: s.labels, senseIndex: Math.max(index, 0), senses: entry.senses.length, primary: true,
-        ...(entry.frequency !== undefined ? { frequency: entry.frequency } : {}),
+    const usable = (s: Sense) => !s.altOf && intersects(s.regions, wanted) && !s.labels.some((l) => exclude.includes(l))
+    const matches = (s: Sense) => s.glosses.some((g) => glossTerms(g).some(([t]) => bridge.includes(t)))
+    const pick = (test: (s: Sense) => boolean) => {
+      for (const entry of ordered) {
+        const index = entry.senses.findIndex(test)
+        if (index >= 0) return { entry, index }
       }
+      return null
     }
-    return null
+    const found = pick((s) => usable(s) && matches(s)) ?? pick(usable) ?? pick(() => true)
+    if (!found) return null
+    const { entry, index } = found
+    const s = entry.senses[index]
+    return {
+      word: entry.word, pos: entry.pos, gloss: s.glosses[0], regions: s.regions, regionTagged: s.regionTagged,
+      labels: s.labels, senseIndex: index, senses: entry.senses.length, primary: true,
+      ...(entry.frequency !== undefined ? { frequency: entry.frequency } : {}),
+    }
   }
 
   return {
@@ -518,8 +531,14 @@ export function createTranslator(options: TranslatorOptions = {}): Translator {
               // A generous limit: the dictionary's quick ranking puts region-tagged words first, and the
               // full scoring below should decide (English "I" has 40+ Vietnamese pronoun candidates, and a
               // limit of 25 cut off the most common, "tôi").
-              : await dict(to).searchEnglish(term, { region: toRegion, pos: posList, exclude, limit: 100 })
-          hits.forEach((hit, rank) => {
+              // Every matching sense, so each word is scored by its best-fitting one (plain "tôi" is formal
+              // or neutral; its first-listed "I" sense is informal and Northern).
+              : await dict(to).searchEnglish(term, { region: toRegion, pos: posList, exclude, limit: 100, allSenses: true })
+          // Rank is the word's place in the dictionary's ranking, not the sense's.
+          const wordRank = new Map<string, number>()
+          for (const h of hits) if (!wordRank.has(h.word)) wordRank.set(h.word, wordRank.size)
+          hits.forEach((hit) => {
+            const rank = wordRank.get(hit.word)!
             // Translating between dialects of one language: the word itself only counts if it's tagged for the target region.
             if (to === from && hit.word === sense.lemma && toWanted && !hit.regionTagged) return
             // A word found through a secondary sense ("borona": millet, and also corn) is a weaker match
@@ -539,7 +558,9 @@ export function createTranslator(options: TranslatorOptions = {}): Translator {
               registerFit(sense.labels, hit.labels, wantedRegister) -
               (termIndex >= synonymsFrom ? 1 : 0) -
               hit.labels.filter((l) => LABEL_PENALTY.has(l)).length * 0.5 -
-              rank * 0.1
+              // A tiebreaker only, capped: the dictionary's quick ranking puts every labelled word after the
+              // unlabelled ones, and labels are already scored above (formal "tôi" came ~30th for "I").
+              Math.min(rank, 10) * 0.1
             keep(hit, score, term)
           })
         }
@@ -548,15 +569,21 @@ export function createTranslator(options: TranslatorOptions = {}): Translator {
         const table = await tableFor(sense, from, to, bridge)
         for (const t of table) {
           if (to === from && t.word === sense.lemma && !tagRegions(t.tags, toMeta)?.size) continue
-          let hit: Hit | null | undefined = scored.get(t.word)
-          if (!hit) hit = await tableHit(t.word, to, posList, toWanted, exclude)
-          if (!hit) continue
           const places = tagRegions(t.tags, toMeta)
-          const regionFit = !toWanted || !places ? 0 : [...places].some((r) => toWanted.has(r)) ? TABLE_REGION_BONUS : -TABLE_OTHER_REGION_PENALTY
+          const otherRegion = Boolean(toWanted && places && ![...places].some((r) => toWanted.has(r)))
+          let hit: Hit | null | undefined = scored.get(t.word)
+          // Another region's word that the dictionary didn't find for this region isn't looked up: its
+          // senses here are likely something else (Peruvian "cancha", popcorn, is a pitch in Mexico).
+          if (!hit && !otherRegion) hit = await tableHit(t.word, to, posList, toWanted, exclude, bridge)
+          if (!hit) continue
+          const regionFit = !toWanted || !places ? 0 : otherRegion ? -TABLE_OTHER_REGION_PENALTY : TABLE_REGION_BONUS
+          // The table's register tags count when the dictionary sense has no register of its own (the
+          // table marks "ta" and "tớ" informal for "I"; their dictionary senses don't say).
+          const tagFit = register(hit.labels) ? 0 : registerFit(sense.labels, t.tags ?? [], wantedRegister)
           // A word only the table found (e.g. the dictionary tags "auto" Mexico but the table says
           // Argentina) starts like a main-meaning match from the first bridge term (2 + 1).
           const base = scored.get(t.word)?.score ?? 3 + commonness(hit, hasFrequencies) + registerFit(sense.labels, hit.labels, wantedRegister)
-          scored.set(t.word, { ...hit, score: base + TABLE_BONUS + regionFit, bridge: 'table' })
+          scored.set(t.word, { ...hit, score: base + TABLE_BONUS + regionFit + tagFit, bridge: 'table' })
         }
 
         // Nothing matched a whole term: try the last word of phrases ("fresh ear of corn" -> "corn"), scored lower.

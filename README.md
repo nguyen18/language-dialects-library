@@ -85,10 +85,8 @@ Meanings are ordered by `meaning` (if given), then by being tagged for `fromRegi
 
 | Set | Correct word in top 3 | Correct word first |
 |---|---|---|
-| Tuning set (used while developing) | 74 / 76 (97%) | 68 / 76 (89%) |
-| Held-out set (written afterwards, not tuned against) | 29 / 30 (97%) | 25 / 30 (83%) |
-
-The held-out miss: Northern Vietnamese *bát* "bowl" (gives *mai*, not Southern *chén*).
+| Tuning set (used while developing) | 77 / 79 (97%) | 71 / 79 (90%) |
+| Held-out set (written afterwards, not tuned against) | 30 / 30 (100%) | 28 / 30 (93%) |
 
 ## Looking words up
 
@@ -97,7 +95,7 @@ The held-out miss: Northern Vietnamese *bát* "bowl" (gives *mai*, not Southern 
 One language's dictionary. `baseUrl` defaults to `https://cdn.jsdelivr.net/npm/which-dialect-<lang>@0.1/data`.
 
 - `dictionary.lookup(word)`: all entries for a word, with every sense's definitions, regions, labels, synonyms and variant links (`altOf`).
-- `dictionary.searchEnglish(term, { region?, pos?, exclude?, limit? })`: words for an English term in this language, one per word, best first (no meaning handling: use the translator for that).
+- `dictionary.searchEnglish(term, { region?, pos?, exclude?, limit?, allSenses? })`: words for an English term in this language, one per word, best first (no meaning handling: use the translator for that). `allSenses: true` returns every matching sense of those words instead.
 - `dictionary.meta()`: the language's name, regions, region groups, source, license, build date and counts.
 - `dictionary.address({ listener?, region?, speaker?, exclude? })`: how to say "I" and "you" depending on who you're talking to, one row per relationship, for languages whose pronouns depend on it (so far Vietnamese; empty for others). Each word says whether it comes from a dictionary definition (`source: 'gloss'`, with the `gloss`) or a hand-written override (`source: 'override'`, with a `note`).
 

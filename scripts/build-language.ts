@@ -50,7 +50,14 @@ type KaikkiSense = {
   alt_of?: { word: string }[]
   form_of?: { word: string }[]
 }
-type KaikkiEntry = { word: string; pos: string; senses?: KaikkiSense[]; synonyms?: { word: string; sense?: string }[] }
+type KaikkiTranslation = NonNullable<KaikkiSense['translations']>[number] & { sense?: string }
+type KaikkiEntry = {
+  word: string
+  pos: string
+  senses?: KaikkiSense[]
+  synonyms?: { word: string; sense?: string }[]
+  translations?: KaikkiTranslation[]
+}
 
 // Synonyms kept per sense; enough for dialect equivalents without bloating large languages.
 const MAX_SYNONYMS = 8
@@ -91,6 +98,47 @@ function pickExamples(raw: KaikkiSense['examples'], max: number): Sense['example
       return { text: x.text!.trim(), ...(translation ? { translation: translation.trim() } : {}) }
     })
   return usable.length ? usable : undefined
+}
+
+// Words that say nothing about which meaning a translation-table label is for.
+const LABEL_STOPWORDS = new Set('the and for with from that this any used'.split(' '))
+const labelWords = (text: string) =>
+  new Set(
+    text
+      .toLowerCase()
+      .replace(/[^a-z ]+/g, ' ')
+      .split(' ')
+      .filter((w) => w.length > 2 && !LABEL_STOPWORDS.has(w))
+      .map((w) => w.replace(/s$/, '')),
+  )
+
+/**
+ * Kaikki puts some translation tables on the entry instead of a sense (English "I", "boy", "friend"),
+ * each row labelled with a short description of the meaning ("personal pronoun", "aircraft type"). Each
+ * label's rows go to the sense whose definitions share the most words with the label, else the first
+ * sense. A sense's own table for a language wins over these.
+ */
+function attachEntryTranslations(raw: KaikkiTranslation[] | undefined, senses: Sense[], langs: string[] | undefined) {
+  if (!raw?.length || !langs?.length || !senses.length) return
+  const byLabel = new Map<string, KaikkiTranslation[]>()
+  for (const t of raw) byLabel.set(t.sense ?? '', [...(byLabel.get(t.sense ?? '') ?? []), t])
+  const senseWords = senses.map((s) => labelWords(s.glosses.join(' ')))
+  for (const [label, rows] of byLabel) {
+    const table = pickTranslations(rows, langs)
+    if (!table) continue
+    const wanted = labelWords(label)
+    let best = 0
+    let bestScore = 0
+    senseWords.forEach((words, i) => {
+      let score = 0
+      for (const w of wanted) if (words.has(w)) score++
+      if (score > bestScore) [best, bestScore] = [i, score]
+    })
+    const target = senses[best]
+    for (const [lang, list] of Object.entries(table)) {
+      if (!target.translations?.[lang]) target.translations = { ...target.translations, [lang]: list }
+    }
+  }
 }
 
 async function download(config: LanguageConfig, refresh: boolean) {
@@ -152,6 +200,7 @@ async function readEntries(file: string, config: LanguageConfig): Promise<Entry[
       if (translations) sense.translations = translations
       senses.push(sense)
     }
+    attachEntryTranslations(raw.translations, senses, config.translationLangs)
     // Entry-level synonyms (not tied to a sense) belong to the main meaning.
     const entrySynonyms = (raw.synonyms ?? []).filter((x) => !x.sense).map((x) => x.word).filter((w) => w && w !== raw.word)
     if (entrySynonyms.length && senses.length) {
@@ -190,8 +239,8 @@ function buildEnglishIndex(entries: Entry[], regionalOnly = false): Map<string, 
 
   const index = new Map<string, Hit[]>()
   const seen = new Set<string>()
-  for (const e of entries) {
-    if (NOT_IN_ENGLISH_INDEX.has(e.pos)) continue
+  entries.forEach((e, entryIndex) => {
+    if (NOT_IN_ENGLISH_INDEX.has(e.pos)) return
     e.senses.forEach((sense, senseIndex) => {
       if (regionalOnly && !sense.regionTagged) return
       const sources = sense.altOf
@@ -199,7 +248,9 @@ function buildEnglishIndex(entries: Entry[], regionalOnly = false): Map<string, 
         : sense.glosses
       for (const gloss of sources) {
         for (const [term, position] of glossTerms(gloss)) {
-          const id = `${term}\u0000${e.word}\u0000${e.pos}\u0000${senseIndex}`
+          // Per entry: a word can have several entries with the same part of speech (one per etymology;
+          // Vietnamese "ta" has two pronouns), and each entry's sense 0 is a different sense.
+          const id = `${term}\u0000${entryIndex}\u0000${senseIndex}`
           if (seen.has(id)) continue
           seen.add(id)
           const hit: Hit = {
@@ -219,7 +270,7 @@ function buildEnglishIndex(entries: Entry[], regionalOnly = false): Map<string, 
         }
       }
     })
-  }
+  })
   for (const hits of index.values()) hits.sort((a, b) => Number(b.primary) - Number(a.primary) || a.senseIndex - b.senseIndex)
   return index
 }
