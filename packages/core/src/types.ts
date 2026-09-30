@@ -224,7 +224,7 @@ export function displayGloss(glosses: string[]): string {
 }
 
 // Trailing words dropped to also match the bare verb: "wait for" is found by "wait" too.
-const TRAILING_PARTICLE = / (for|to|at|on|with|about|of|in|into|up|out|off|over)$/
+export const TRAILING_PARTICLE = / (for|to|at|on|with|about|of|in|into|up|out|off|over)$/
 
 /**
  * Splits an English gloss into search terms, main meaning first: "now, today, this time" ->

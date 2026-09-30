@@ -14,6 +14,7 @@ import {
   type Hit,
   type LanguageMeta,
   PRONOUN_PERSONS,
+  TRAILING_PARTICLE,
   type PronounChoice,
   type PronounPerson,
   type PronounRow,
@@ -291,6 +292,41 @@ const SPELLING_VIA = /pronunciation spelling|misspelling|eye dialect|nonstandard
 const MARGINAL_LABELS = new Set(['informal', 'slang', 'colloquial', 'dialectal', 'rare', 'nonstandard', 'Internet', 'humorous'])
 const LABEL_PENALTY = new Set(['slang', 'Internet', 'humorous', 'literary', 'dialectal', 'uncommon', 'rare', 'euphemistic'])
 
+// A target gloss that lists the bridge term itself as an equivalent ("muốn": "to want"; "má": "mother;
+// mom") is a plain translation, but a short gloss can't earn definition overlap, since the term's own
+// words don't count. Wordier glosses did ("mắc": "to want to (go to the bathroom, laugh, etc.); to have
+// the desire to" overlapped "desire"), so a narrow use beat the everyday word. An exact equivalent
+// scores like one overlapping word, for main terms only: a side term's exact match ("corn" → "cereal" →
+// "ngũ cốc") is a looser equivalent.
+const EXACT_GLOSS_BONUS = 3
+// The term narrowed by a parenthetical right after it ("to want to (go to the bathroom …)") is a
+// restricted use of the word, not its general meaning (see narrows()).
+const NARROWED_PENALTY = 1.5
+
+// A parenthetical narrows a term when it names something the source meaning doesn't: "(go to the
+// bathroom, laugh, etc.)" does; "(awesome; fantastic; great)" for cool = awesome and "(for)" don't.
+function narrows(parenthetical: string, context: Set<string>): boolean {
+  return contentWords(parenthetical).size > 0 && overlap(context, parenthetical) === 0
+}
+
+function exactGloss(gloss: string, term: string, context: Set<string>): boolean {
+  // "to wait for" is plain "wait", but a part with a narrowing parenthetical isn't ("to want to (…)").
+  return gloss
+    .replace(/\(([^)]*)\)/g, (_, inner: string) => (narrows(inner, context) ? '(' : ' '))
+    .split(/[;,/]/)
+    .some((part) => {
+      if (part.includes('(')) return false
+      const t = normalizeEnglish(part.replace(/[.!?]+\s*$/, ''))
+      return t === term || t.replace(TRAILING_PARTICLE, '') === term
+    })
+}
+
+function narrowed(gloss: string, term: string, context: Set<string>): boolean {
+  const escaped = term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  const m = new RegExp(`\\b${escaped}\\b(?:\\s+to)?\\s*\\(([^)]*)`, 'i').exec(gloss)
+  return m !== null && narrows(m[1], context)
+}
+
 // Register: a polite source word should translate to a polite word, a casual one to a casual one.
 const POLITE = new Set(['polite', 'formal', 'honorific', 'literary'])
 const CASUAL = new Set(['informal', 'colloquial', 'slang', 'familiar', 'vulgar', 'Internet'])
@@ -315,7 +351,7 @@ function registerFit(source: string[], target: string[], wanted?: 'casual' | 'ne
 // the speaker") matched English "I" ("the speaker or writer") on "speaker".
 const STOPWORDS = new Set(
   ('a an the to of or and in on for with by as at from that this be is are was it its used use any some one ' +
-    'something someone very more most usually especially often also who which what when being having into ' +
+    'something someone very more most usually especially often also who which what when being have has having into ' +
     'speaker speakers writer referred refer refers referring grammatical subject object sentence clause ' +
     'word words form forms term expression phrase talking speaking addressed addressing person people ' +
     'particular certain various generally sense usage meaning').split(' '),
@@ -720,6 +756,7 @@ export function createTranslator(options: TranslatorOptions = {}): Translator {
           // The term's own words say nothing about which meaning matched, so they don't count as overlap.
           const termWords = contentWords(term)
           const ctx = new Set([...context].filter((w) => !termWords.has(w)))
+          const isMain = main.has(term) || termIndex === 0
           const hits =
             to === 'en'
               ? await englishCandidates(term, posList, toMeta, toRegion, exclude)
@@ -742,7 +779,9 @@ export function createTranslator(options: TranslatorOptions = {}): Translator {
             // so the penalty is small then.
             const score =
               3 * overlap(ctx, hit.gloss) +
-              (main.has(term) || termIndex === 0 ? 2 : termIndex === 1 ? 1 : 0) +
+              (isMain && exactGloss(hit.gloss, term, ctx) ? EXACT_GLOSS_BONUS : 0) -
+              (narrowed(hit.gloss, term, ctx) ? NARROWED_PENALTY : 0) +
+              (isMain ? 2 : termIndex === 1 ? 1 : 0) +
               (hit.primary ? 1 : 0) +
               // Tagged for the target region: a full bonus when the match is the word's main meaning, a
               // small one otherwise ("bá cháy" is Southern for "awesome", not for "cool" the temperature).

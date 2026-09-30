@@ -36,6 +36,10 @@ export const CASES: Case[] = [
   c(enViS, 'cool', ['ngầu', 'chất'], { meaning: 'awesome great' }),
   c(enViS, 'dog', ['chó']),
   c(enViS, 'speak', ['nói']),
+  // Everyday "muốn", not "mắc" (Southern, but only "want to (go to the bathroom, laugh, etc.)").
+  c(pair('en', undefined, 'vi', undefined), 'want', ['muốn']),
+  c(enViS, 'want', ['muốn']),
+  c(enViN, 'want', ['muốn']),
   c(enViS, 'said', ['nói']),
   c(enViS, 'computer', ['máy tính', 'máy vi tính']),
   c(enViS, 'corn', ['bắp']),
