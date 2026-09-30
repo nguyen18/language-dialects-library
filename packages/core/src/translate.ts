@@ -10,11 +10,11 @@ import {
   displayGloss,
   glossTerms,
   normalizeEnglish,
-  type PronounChoice,
-  type PronounRow,
   type Example,
   type Hit,
   type LanguageMeta,
+  type PronounChoice,
+  type PronounRow,
   type Sense,
   type TableTranslation,
 } from './types.ts'
@@ -63,6 +63,25 @@ export type Translation = Hit & {
   relationship?: string
 }
 
+/**
+ * A relationship the source word is used in as "I" or "you", from the source language's pronoun table
+ * (Vietnamese "em": I, talking to someone a bit older; you, talking to someone younger).
+ */
+export type PronounUse = {
+  /** Row id, e.g. "older-male". */
+  id: string
+  /** Who you're talking to, e.g. "Someone a bit older (man)". */
+  label: string
+  /** 'self' when the word means "I" there, 'addressee' when it means "you". */
+  person: 'self' | 'addressee'
+  /** Only said by a male or female speaker. */
+  speaker?: 'male' | 'female'
+  regions: string[]
+  regionTagged: boolean
+  note?: string
+  warning?: string
+}
+
 /** The words for "I" (or "you") in one relationship, from the target language's pronoun table. */
 export type RelationshipWords = {
   /** Row id, usable as `listener`. */
@@ -85,6 +104,12 @@ export type TranslationGroup = {
    * `listener` to put its words first.
    */
   relationships?: RelationshipWords[]
+  /**
+   * When the source word is in the source language's pronoun table: the relationships it's used in with
+   * this meaning. Uses no definition covers get a group of their own, translated as "I" or "you"
+   * (Vietnamese "em" is only defined as "younger sibling" and "refers to any person described by em").
+   */
+  pronounUses?: PronounUse[]
 }
 
 export type TranslateOptions = {
@@ -411,11 +436,15 @@ export function createTranslator(options: TranslatorOptions = {}): Translator {
     const en = dict('en')
     const wanted = resolveRegion(toMeta, toRegion)
     const hits: Hit[] = []
-    for (const entry of await en.lookup(term)) {
+    // Terms are lowercase, so the capitalized word too ("i" is the letter; the pronoun is "I"). When the
+    // exact part of speech is there, other compatible ones are left out (the letter "i" for pronoun "I").
+    const capitalized = term.charAt(0).toUpperCase() + term.slice(1)
+    let entries = [...(await en.lookup(term)), ...(capitalized !== term ? await en.lookup(capitalized) : [])]
+    const usable = (s: Sense) => !s.altOf && intersects(s.regions, wanted) && !s.labels.some((l) => exclude.includes(l))
+    if (entries.some((e) => e.pos === posList[0] && e.senses.some(usable))) entries = entries.filter((e) => e.pos === posList[0])
+    for (const entry of entries) {
       if (!posList.includes(entry.pos)) continue
-      const index = entry.senses.findIndex(
-        (s) => !s.altOf && intersects(s.regions, wanted) && !s.labels.some((l) => exclude.includes(l)),
-      )
+      const index = entry.senses.findIndex(usable)
       if (index < 0) continue
       const s = entry.senses[index]
       hits.push({
@@ -538,11 +567,56 @@ export function createTranslator(options: TranslatorOptions = {}): Translator {
     }
   }
 
-  return {
+  // The source word's uses in a pronoun table, with the definition each came from.
+  function pronounUses(rows: PronounRow[], word: string): { gloss?: string; person: 'self' | 'addressee'; use: PronounUse }[] {
+    const w = word.trim()
+    const out: { gloss?: string; person: 'self' | 'addressee'; use: PronounUse }[] = []
+    for (const r of rows) {
+      for (const person of ['self', 'addressee'] as const) {
+        for (const c of r[person]) {
+          if (c.word !== w && c.word !== w.toLowerCase()) continue
+          out.push({
+            gloss: c.gloss,
+            person,
+            use: {
+              id: r.id, label: r.label, person, regions: c.regions, regionTagged: c.regionTagged,
+              ...(c.speaker ? { speaker: c.speaker } : {}), ...(c.note ? { note: c.note } : {}), ...(r.warning ? { warning: r.warning } : {}),
+            },
+          })
+        }
+      }
+    }
+    return out
+  }
+
+  // The target's words for "I" or "you": English "I"/"me" or "you" themselves, else English "I"/"you"
+  // translated (with the caller's listener, so Vietnamese gets the right relationship word).
+  async function pronounTranslations(
+    person: 'self' | 'addressee',
+    o: { to: string; toMeta: LanguageMeta; toRegion?: string; register?: TranslateOptions['register']; listener?: string; speaker?: 'male' | 'female'; exclude: string[]; limit: number },
+  ): Promise<Translation[]> {
+    if (o.to === 'en') {
+      const words = person === 'self' ? ['I', 'me'] : ['you']
+      const hits = (await Promise.all(words.map((w) => englishCandidates(w.toLowerCase(), ['pron'], o.toMeta, o.toRegion, o.exclude)))).flat()
+      const seen = new Set<string>()
+      return hits
+        .filter((h) => h.pos === 'pron' && !seen.has(h.word) && seen.add(h.word))
+        .map((h, i) => ({ ...h, score: 10 - i, bridge: 'pronouns' }))
+    }
+    const groups = await api.translate(person === 'self' ? 'I' : 'you', {
+      from: 'en', to: o.to, toRegion: o.toRegion, register: o.register, listener: o.listener, speaker: o.speaker, exclude: o.exclude, limit: o.limit,
+    })
+    const found = (groups.find((g) => personOf(g.source) === person) ?? groups[0])?.translations ?? []
+    // Pronouns only, when there are any (English "I" into Spanish also finds the letter, "i latina").
+    const pronouns = found.filter((t) => t.pos === 'pron')
+    return pronouns.length ? pronouns : found
+  }
+
+  const api: Translator = {
     senses,
 
     async translate(word, { from, to, fromRegion, toRegion, pos, meaning, register: wantedRegister, listener, speaker, exclude = DEFAULT_EXCLUDED_LABELS, limit = 5, allSenses = false }) {
-      const [sourceSenses, toMeta] = await Promise.all([senses(word, { from, fromRegion, pos }), dict(to).meta()])
+      const [sourceSenses, toMeta, fromMeta] = await Promise.all([senses(word, { from, fromRegion, pos }), dict(to).meta(), dict(from).meta()])
       // The target's pronoun table, for "I"/"you" senses (throws for an unknown listener).
       const pronounRows: PronounRow[] =
         toMeta.pronouns && sourceSenses.some((s) => personOf(s))
@@ -707,6 +781,30 @@ export function createTranslator(options: TranslatorOptions = {}): Translator {
         }
       }
 
+      // The source word's uses in its own language's pronoun table ("em": I to someone older, you to
+      // someone younger). A use goes to the group of the definition it came from; the rest get a group
+      // per person, translated as the target's "I" or "you".
+      const uses = fromMeta.pronouns && (!pos || pos === 'pron') ? pronounUses(await dict(from).pronouns({ region: fromRegion, speaker, exclude }), word) : []
+      for (const person of ['self', 'addressee'] as const) {
+        const leftover: PronounUse[] = []
+        for (const u of uses.filter((x) => x.person === person)) {
+          const home = groups.filter((g) => u.gloss && personOf(g.source) === person && g.source.glosses.includes(u.gloss))
+          for (const g of home) g.pronounUses = [...(g.pronounUses ?? []), u.use]
+          if (!home.length) leftover.push(u.use)
+        }
+        if (!leftover.length) continue
+        const tagged = leftover.every((u) => u.regionTagged)
+        const source: SourceSense = {
+          word, lemma: word.trim(), pos: 'pron',
+          glosses: [`${person === 'self' ? 'I/me' : 'you'}, when talking to: ${leftover.map((u) => u.label.charAt(0).toLowerCase() + u.label.slice(1) + (u.speaker ? ` (said by a ${u.speaker === 'male' ? 'man' : 'woman'})` : '')).join('; ')}`],
+          regions: tagged ? [...new Set(leftover.flatMap((u) => u.regions))] : fromMeta.regions,
+          regionTagged: tagged,
+          labels: [],
+        }
+        const translations = await pronounTranslations(person, { to, toMeta, toRegion, register: wantedRegister, listener, speaker, exclude, limit })
+        groups.push({ source, bridge: [], translations, pronounUses: leftover })
+      }
+
       // Most relevant sense first: one matching `meaning`; then one tagged for the source region (the
       // regional sense is what makes the word worth asking about); then mainstream before slang;
       // otherwise the dictionary's order. Pass `pos` or `meaning` when you know the sense you want.
@@ -738,4 +836,5 @@ export function createTranslator(options: TranslatorOptions = {}): Translator {
       })
     },
   }
+  return api
 }
