@@ -39,6 +39,9 @@ const LABELS = new Set([
   'derogatory', 'disapproving', 'offensive', 'vulgar',
 ])
 
+// A subpage title's suffix: "/languages A to L", "/languages M to Z".
+const SUBPAGE = /\/languages [A-Z] to [A-Z]$/
+
 // Kaikki JSONL fields this script reads.
 type KaikkiSense = {
   glosses?: string[]
@@ -170,6 +173,9 @@ async function readEntries(file: string, config: LanguageConfig): Promise<Entry[
   for await (const line of lines) {
     if (!line.trim()) continue
     const raw = JSON.parse(line) as KaikkiEntry
+    // Wiktionary splits very long pages into subpages ("i/languages M to Z" for the letter i), and Kaikki
+    // uses the subpage title as the word.
+    raw.word = raw.word.replace(SUBPAGE, '')
     if (skipPos.has(raw.pos) || (config.keepWord && !config.keepWord(raw.word))) continue
     if (config.dropTechnical && raw.senses?.length && raw.senses.every((s) => s.topics?.length)) continue
     const senses: Sense[] = []
