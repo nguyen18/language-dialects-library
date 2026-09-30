@@ -1,4 +1,14 @@
-import type { LanguageConfig } from '../scripts/language-config.ts'
+import type { LanguageConfig, PronounPick } from '../scripts/language-config.ts'
+
+// Regular compounds for the pronoun table (the dictionary doesn't list them): "các" makes a plural
+// ("các anh", you older men), "chúng" a plural "we" ("chúng em"), Southern "tụi" either ("tụi em"), and
+// "ấy" ("that") a "he/she" ("em ấy"). Extra fields (regions, gender, speaker, inclusive) pass through.
+type Extra = Partial<Pick<PronounPick, 'speaker' | 'gender' | 'inclusive'>> & { regions?: string[] }
+const cac = (w: string, extra: Extra = {}): PronounPick => ({ word: `các ${w}`, rule: true, note: `các (plural) + ${w}`, ...extra })
+const chung = (w: string, extra: Extra = {}): PronounPick => ({ word: `chúng ${w}`, rule: true, note: `chúng (plural "we") + ${w}`, inclusive: false, ...extra })
+const tui_ = (w: string, extra: Extra = {}): PronounPick => ({ word: `tụi ${w}`, rule: true, regions: ['Southern'], note: `tụi (Southern plural) + ${w}`, ...extra })
+const ay = (w: string, extra: Extra = {}): PronounPick => ({ word: `${w} ấy`, rule: true, note: `${w} + ấy ("that"): he/she`, ...extra })
+const EM_NOTE = 'Wiktionary defines em only as "refers to any person described by the noun em" (younger sibling, younger person).'
 
 // Vietnamese: three dialect regions. The source tags senses with "Northern", "Central" and "Southern";
 // "Central" + "North" together means North Central Vietnam, which counts as Central here.
@@ -26,10 +36,48 @@ const config: LanguageConfig = {
   keepWord: (word) => /[a-zA-ZÀ-ỹđĐ]/.test(word),
   // wordfreq only has a "small" Vietnamese list (the most common ~25k tokens, which are syllables).
   wordfreq: 'small',
-  // How to say "I" and "you" depending on who you're talking to. Each pick with a `gloss` is a pronoun
-  // definition from the data ("you, my father"); the few without one are overrides for what Wiktionary's
-  // definitions don't say, each with a note.
+  // How to say "I", "you", "he/she", "we", plural "you" and "they" depending on who you're talking to
+  // (or about). Picks with a `gloss` are pronoun definitions from the data ("you, my father"); rules are
+  // regular compounds the dictionary doesn't list ("các" + "anh"); the few others are overrides for what
+  // Wiktionary's definitions don't say, each with a note.
   pronouns: [
+    {
+      id: 'general',
+      label: 'Anyone / not sure (neutral)',
+      default: true,
+      self: [
+        { word: 'tôi', gloss: /^I\/me \(used in formal contexts/ },
+        { word: 'mình', gloss: /^I\/me$/ },
+        { word: 'tui', gloss: /^alternative form of tôi$/ },
+      ],
+      addressee: [
+        { word: 'bạn', gloss: /^you, an unspecified person viewing a work/ },
+        { word: 'anh', gloss: /^you, a young adult man$/, gender: 'male' },
+        { word: 'chị', gloss: /^you, a young-adult woman$/, gender: 'female' },
+      ],
+      third: [
+        { word: 'anh ấy', gloss: /^he \(man of equal or slightly greater social status\)$/, gender: 'male' },
+        { word: 'chị ấy', gloss: /^she \(who is somewhat older than the speaker\)$/, gender: 'female' },
+        { word: 'ảnh', gloss: /^he; him \(man of equal or slightly greater social status\)$/, gender: 'male' },
+        { word: 'chỉ', gloss: /^she; her$/, gender: 'female' },
+        { word: 'nó', gloss: /^he; him; she; her$/ },
+      ],
+      selfPlural: [
+        { word: 'chúng tôi', gloss: /^we\/us \(exclusive\)/, inclusive: false },
+        { word: 'chúng ta', gloss: /^we\/us \(inclusive\)/, inclusive: true },
+        { word: 'chúng mình', gloss: /^we\/us \(inclusive\)$/, inclusive: true },
+        { word: 'tụi tui', gloss: /^we\/us \(exclusive\)$/, inclusive: false },
+      ],
+      addresseePlural: [
+        cac('bạn'),
+        { word: 'mọi người', gloss: /you guys/ },
+      ],
+      thirdPlural: [
+        { word: 'họ', gloss: /^they\/them \(used in formal situations/ },
+        { word: 'chúng nó', gloss: /^they\/them$/ },
+        { word: 'tụi nó', gloss: /^they\/them$/ },
+      ],
+    },
     {
       id: 'friend',
       label: 'A friend your age',
@@ -42,26 +90,66 @@ const config: LanguageConfig = {
         { word: 'bạn', gloss: /^you, a peer of the speaker$/ },
         { word: 'cậu', gloss: /^you, my peer who I know is as old as me$/ },
       ],
+      third: [ay('bạn'), ay('cậu')],
+      selfPlural: [
+        { word: 'chúng mình', gloss: /^we\/us \(inclusive\)$/, inclusive: true },
+        tui_('mình', { inclusive: true }),
+        chung('tớ', { regions: ['Northern'] }),
+        { word: 'tụi tui', gloss: /^we\/us \(exclusive\)$/, inclusive: false },
+      ],
+      addresseePlural: [cac('bạn'), cac('cậu')],
+      thirdPlural: [
+        { word: 'chúng nó', gloss: /^they\/them$/ },
+        { word: 'tụi nó', gloss: /^they\/them$/ },
+      ],
     },
     {
       id: 'close-friend',
       label: 'A close friend (very casual)',
       self: [{ word: 'tao', gloss: /^I\/me$/ }],
       addressee: [{ word: 'mày', gloss: /^you$/ }],
+      third: [{ word: 'nó', gloss: /^he; him; she; her$/ }],
+      selfPlural: [
+        { word: 'chúng tao', gloss: /^we; us \(exclusive\)$/, inclusive: false },
+        tui_('tao'),
+      ],
+      addresseePlural: [
+        { word: 'chúng mày', gloss: /^you \(second-person plural\)$/ },
+        tui_('mày'),
+        { word: 'bây', gloss: /^you \(second-person plural\)$/ },
+      ],
+      thirdPlural: [
+        { word: 'chúng nó', gloss: /^they\/them$/ },
+        { word: 'tụi nó', gloss: /^they\/them$/ },
+      ],
       // The definitions only label these "familiar".
       warning: 'Rude with anyone but close friends.',
     },
     {
       id: 'older-male',
       label: 'Someone a bit older (man)',
-      self: [{ word: 'em', note: 'Wiktionary defines em only as "refers to any person described by the noun em" (younger sibling, younger person).' }],
+      self: [{ word: 'em', note: EM_NOTE }],
       addressee: [{ word: 'anh', gloss: /^you, a male who's \(presumably\) slightly older than me$/ }],
+      third: [
+        { word: 'anh ấy', gloss: /^he \(man of equal or slightly greater social status\)$/, gender: 'male' },
+        { word: 'ảnh', gloss: /^he; him \(man of equal or slightly greater social status\)$/, gender: 'male' },
+      ],
+      selfPlural: [chung('em'), tui_('em')],
+      addresseePlural: [cac('anh')],
+      thirdPlural: [cac('anh ấy')],
     },
     {
       id: 'older-female',
       label: 'Someone a bit older (woman)',
-      self: [{ word: 'em', note: 'Wiktionary defines em only as "refers to any person described by the noun em" (younger sibling, younger person).' }],
+      self: [{ word: 'em', note: EM_NOTE }],
       addressee: [{ word: 'chị', gloss: /^you, a female who's \(presumably\) slightly older than me$/ }],
+      third: [
+        { word: 'chị ấy', gloss: /^she \(who is somewhat older than the speaker\)$/, gender: 'female' },
+        { word: 'chỉ', gloss: /^she; her$/, gender: 'female' },
+      ],
+      selfPlural: [chung('em'), tui_('em')],
+      addresseePlural: [cac('chị')],
+      thirdPlural: [cac('chị ấy')],
     },
     {
       id: 'younger',
@@ -75,6 +163,13 @@ const config: LanguageConfig = {
         { word: 'cậu', gloss: /^you, a male younger than me$/ },
         { word: 'cô', gloss: /^you, a female who's \(presumably\) slightly younger than me$/ },
       ],
+      third: [ay('em'), { word: 'nó', gloss: /^he; him; she; her$/ }],
+      selfPlural: [chung('anh', { speaker: 'male' }), chung('chị', { speaker: 'female' })],
+      addresseePlural: [cac('em')],
+      thirdPlural: [
+        { word: 'chúng nó', gloss: /^they\/them$/ },
+        { word: 'tụi nó', gloss: /^they\/them$/ },
+      ],
     },
     {
       id: 'parent',
@@ -87,6 +182,13 @@ const config: LanguageConfig = {
         { word: 'mẹ', gloss: /^you, my mother$/ },
         { word: 'thầy', gloss: /^you, my father$/ },
       ],
+      third: [
+        { word: 'ba', regions: ['Southern'], gender: 'male', note: 'Southern "dad", also for "he" about your father; no pronoun sense in Wiktionary.' },
+        { word: 'má', regions: ['Southern'], gender: 'female', note: 'Southern "mom", also for "she" about your mother; no pronoun sense in Wiktionary.' },
+        { word: 'bố', gloss: /^he\/him, your\/my father$/, gender: 'male' },
+        { word: 'mẹ', gender: 'female', note: 'Also "she" about your mother; Wiktionary only defines it as "I" and "you".' },
+      ],
+      selfPlural: [chung('con'), tui_('con')],
     },
     {
       id: 'parents-age',
@@ -100,6 +202,13 @@ const config: LanguageConfig = {
         { word: 'chú', gloss: /^you, a man who's presumably slightly younger than my parents$/ },
         { word: 'cô', gloss: /^you, a woman who's \(presumably\) slightly younger than either of my parents$/ },
       ],
+      third: [
+        { word: 'bác', gloss: /^he\/him\/she\/her, someone who's presumably slightly older than one of my parents$/ },
+        ay('chú', { gender: 'male' }),
+        { word: 'cô ấy', gender: 'female', note: 'Wiktionary defines cô ấy only for a young woman; about a woman your parents\' age it\'s cô + ấy ("that").' },
+      ],
+      selfPlural: [chung('cháu', { regions: ['Northern'] }), chung('con', { regions: ['Central', 'Southern'] })],
+      addresseePlural: [cac('bác'), cac('chú'), cac('cô')],
     },
     {
       id: 'grandparents-age',
@@ -112,6 +221,14 @@ const config: LanguageConfig = {
         { word: 'ông', gloss: /^you, my grandfather$/ },
         { word: 'bà', gloss: /^you, my grandmother$/ },
       ],
+      third: [
+        { word: 'ông ấy', gloss: /^he \(older or respected man\)$/, gender: 'male' },
+        { word: 'bà ấy', gloss: /^she \(woman of higher social status, e\.g\., older\)$/, gender: 'female' },
+        { word: 'ổng', gloss: /^he; him \(older or respected man\)$/, gender: 'male' },
+        { word: 'bả', gloss: /^she; her \(woman of higher social status\)$/, gender: 'female' },
+      ],
+      selfPlural: [chung('cháu', { regions: ['Northern'] }), chung('con', { regions: ['Central', 'Southern'] })],
+      addresseePlural: [cac('ông'), cac('bà')],
     },
     {
       id: 'teacher',
@@ -121,6 +238,12 @@ const config: LanguageConfig = {
         { word: 'thầy', gloss: /^you, my male teacher$/ },
         { word: 'cô', gloss: /^you, my older female teacher$/ },
       ],
+      third: [
+        { word: 'thầy', gloss: /^he\/him, that male teacher we're talking about$/, gender: 'male' },
+        { word: 'cô', gloss: /^she\/her, my\/your\/our female teacher$/, gender: 'female' },
+      ],
+      selfPlural: [chung('em')],
+      addresseePlural: [cac('thầy'), cac('cô')],
     },
     {
       id: 'partner',
@@ -134,17 +257,38 @@ const config: LanguageConfig = {
         { word: 'anh', gloss: /^you, my boyfriend$/, speaker: 'female' },
         { word: 'mình', gloss: /^you \(used for one's spouse\)$/ },
       ],
+      third: [
+        { word: 'anh ấy', gloss: /^he \(man of equal or slightly greater social status\)$/, gender: 'male' },
+        { word: 'cô ấy', gloss: /^she \(towards a young girl or woman\)$/, gender: 'female' },
+        { word: 'hắn', gloss: /^he\/him, my boyfriend$/, gender: 'male' },
+      ],
+      selfPlural: [
+        { word: 'chúng mình', gloss: /^we\/us \(inclusive\)$/, inclusive: true },
+        { word: 'mình', gloss: /^we\/us$/, inclusive: true },
+      ],
     },
     {
       id: 'formal',
       label: 'A stranger, formal, work',
       self: [{ word: 'tôi', gloss: /^I\/me \(used in formal contexts/ }],
       addressee: [
-        { word: 'anh', gloss: /^you, a young adult man$/ },
-        { word: 'chị', gloss: /^you, a young-adult woman$/ },
-        { word: 'ông', gloss: /^you, a man about 40 or older$/ },
-        { word: 'bà', gloss: /^you, a woman about 40 or older$/ },
+        { word: 'anh', gloss: /^you, a young adult man$/, gender: 'male' },
+        { word: 'chị', gloss: /^you, a young-adult woman$/, gender: 'female' },
+        { word: 'ông', gloss: /^you, a man about 40 or older$/, gender: 'male' },
+        { word: 'bà', gloss: /^you, a woman about 40 or older$/, gender: 'female' },
       ],
+      third: [
+        { word: 'ông ấy', gloss: /^he \(older or respected man\)$/, gender: 'male' },
+        { word: 'bà ấy', gloss: /^she \(woman of higher social status, e\.g\., older\)$/, gender: 'female' },
+        { word: 'anh ấy', gloss: /^he \(man of equal or slightly greater social status\)$/, gender: 'male' },
+        { word: 'chị ấy', gloss: /^she \(who is somewhat older than the speaker\)$/, gender: 'female' },
+      ],
+      selfPlural: [
+        { word: 'chúng tôi', gloss: /^we\/us \(exclusive\)/, inclusive: false },
+        { word: 'chúng ta', gloss: /^we\/us \(inclusive\)/, inclusive: true },
+      ],
+      addresseePlural: [{ word: 'quý vị', gloss: /^you$/ }, cac('anh chị')],
+      thirdPlural: [{ word: 'họ', gloss: /^they\/them \(used in formal situations/ }],
     },
   ],
 }

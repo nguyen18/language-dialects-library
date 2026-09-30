@@ -299,6 +299,24 @@ describe('translator (real data)', { skip: !built && 'build en, vi and es data f
     await assert.rejects(top('I', { from: 'en', to: 'vi', listener: 'boss' }), /unknown listener "boss"/)
   })
 
+  it('translates he, she, we and they with the pronoun table', async () => {
+    const first = async (word: string, o: Partial<Parameters<typeof tr.translate>[1]> = {}) =>
+      (await top(word, { from: 'en', to: 'vi', ...o }))[0]
+    assert.equal(await first('he'), 'anh ấy')
+    assert.equal(await first('she'), 'chị ấy')
+    assert.equal(await first('he', { toRegion: 'Southern' }), 'ảnh')
+    assert.equal(await first('he', { about: 'grandparents-age', toRegion: 'Southern' }), 'ổng')
+    assert.equal(await first('she', { about: 'teacher' }), 'cô')
+    // "we" is exclusive first in Wiktionary: chúng tôi; to parents, chúng con.
+    assert.equal(await first('we'), 'chúng tôi')
+    assert.equal(await first('we', { listener: 'parent' }), 'chúng con')
+    assert.equal(await first('they'), 'họ')
+    assert.equal(await first("y'all", { listener: 'younger' }), 'các em')
+    // Plain "you": the default row's neutral word.
+    assert.equal(await first('you'), 'bạn')
+    await assert.rejects(top('he', { from: 'en', to: 'vi', about: 'boss' }), /unknown listener "boss"/)
+  })
+
   it('says when a source pronoun is used (reverse direction)', async () => {
     // "em" is never defined as "I": its uses come from the pronoun table, in groups of their own.
     const em = await tr.translate('em', { from: 'vi', to: 'en', pos: 'pron' })

@@ -92,44 +92,68 @@ export type LanguageMeta = {
 }
 
 /**
- * One word in the pronoun table: how to say "I" (a row's `self`) or "you" (its `addressee`) in one
+ * One word in the pronoun table: how to say "I", "you", "he/she", "we", plural "you" or "they" in one
  * relationship. Most come from a dictionary definition that describes the relationship ("you, a male
- * who's (presumably) slightly older than me"); the rest are hand-written overrides for what the
- * definitions don't say (Vietnamese "em" is never defined as "I").
+ * who's (presumably) slightly older than me"); regular compounds the dictionary doesn't list come from a
+ * grammar rule ("các" + "anh" = plural "you" to older men); the rest are hand-written overrides for what
+ * the definitions don't say (Vietnamese "em" is never defined as "I").
  */
 export type PronounChoice = {
   word: string
-  /** The definition this choice comes from. Omitted for overrides. */
+  /** The definition this choice comes from. Omitted for rules and overrides. */
   gloss?: string
-  /** Where the choice comes from: a dictionary definition, or a hand-written override with a `note`. */
-  source: 'gloss' | 'override'
+  /**
+   * Where the choice comes from: a dictionary definition, a grammar rule (a regular compound, with a
+   * `note` naming the rule), or a hand-written override with a `note`.
+   */
+  source: 'gloss' | 'rule' | 'override'
   regions: string[]
   regionTagged: boolean
   labels: string[]
   /** Only when the speaker is male or female ("anh" if you're a man, "chị" if a woman). */
   speaker?: 'male' | 'female'
+  /** The gender of the person the word refers to, when it has one ("anh ấy" he, "chị ấy" she). */
+  gender?: 'male' | 'female'
+  /** For "we": true when it includes the listener ("chúng ta"), false when it doesn't ("chúng tôi"). */
+  inclusive?: boolean
   note?: string
 }
 
+/** The pronoun table's columns: I, you, he/she, we, you (plural), they. */
+export const PRONOUN_PERSONS = ['self', 'addressee', 'third', 'selfPlural', 'addresseePlural', 'thirdPlural'] as const
+export type PronounPerson = (typeof PRONOUN_PERSONS)[number]
+
 /**
  * A relationship and the words for it, e.g. Vietnamese "Your parents": you say "con", you call them
- * "ba"/"má" (Southern) or "bố"/"mẹ".
+ * "ba"/"má" (Southern) or "bố"/"mẹ". For "he/she" and "they" the relationship is with the person you're
+ * talking about.
  */
 export type PronounRow = {
   /** Stable id, e.g. "parent", "older-male". */
   id: string
-  /** Who you're talking to, for display: "Your parents". */
+  /** Who you're talking to (or about), for display: "Your parents". */
   label: string
   /** How to say "I". */
   self: PronounChoice[]
   /** How to say "you". */
   addressee: PronounChoice[]
+  /** How to say "he"/"she" about this person. */
+  third: PronounChoice[]
+  /** How to say "we" (you and others, talking to this person). */
+  selfPlural: PronounChoice[]
+  /** How to say "you" to several people like this. */
+  addresseePlural: PronounChoice[]
+  /** How to say "they" about several people like this. */
+  thirdPlural: PronounChoice[]
+  /** The row to use when the relationship isn't known (neutral words: Vietnamese "tôi", "bạn"). */
+  default?: boolean
   /** A caution for the whole row, e.g. that "tao"/"mày" are rude outside close friendships. */
   warning?: string
 }
 
 export type StoredPronounChoice = Omit<PronounChoice, 'regions' | 'regionTagged' | 'labels'> & { regions?: string[]; labels?: string[] }
-export type StoredPronounRow = Omit<PronounRow, 'self' | 'addressee'> & { self: StoredPronounChoice[]; addressee: StoredPronounChoice[] }
+/** Stored rows leave out empty columns. */
+export type StoredPronounRow = Omit<PronounRow, PronounPerson> & Partial<Record<PronounPerson, StoredPronounChoice[]>>
 
 // Stored forms. To keep files small, a sense with no region tag has no `regions` (it means every
 // region, regionTagged false), and empty `labels` are left out. The API fills both back in.
