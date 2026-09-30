@@ -21,6 +21,9 @@ Decisions (2026-09-27, with the owner):
 languages/<lang>.ts          per-language build config (regions, tag → region mapping, filters)
 scripts/build-language.ts    Kaikki JSONL → packages/<lang>/data
 scripts/language-config.ts   LanguageConfig type
+scripts/build-all.ts         npm run build:data:all: every language, English first
+scripts/fetch-data.ts        npm run fetch:data: quick start, published data from npm (+ picks rebuilt from configs)
+scripts/data-updates.ts      keeps DATA_UPDATES.md (Wiktionary dump dates per language) current on each build
 scripts/picks.ts             hand-picked words: checks config rows, writes picks.json (npm run build:picks)
 scripts/picks-sheet.ts       review sheet for picks, and --apply to turn it into config rows
 packages/core/               npm "which-dialect": the API (src/index.ts), shared types (src/types.ts),
@@ -215,6 +218,10 @@ Known-correct cases; pass = a correct word in the top 3 of the first (most relev
 **Published 2026-09-30:** `which-dialect`, `which-dialect-vi` and `which-dialect-en`, all **0.1.0**, from `main` at `02050b6`, by npm account `nguyen18`. The data is the data built and evaluated that day (the owner chose not to refresh from Kaikki first). Verified from a clean install: `createTranslator()` with defaults fetches from jsDelivr (`which-dialect-<lang>@0.1`) and gives I → tôi, I to a parent → con, he (Southern) → ảnh, ngô N→S → bắp, truck US→UK → lorry. Sizes: which-dialect 104 kB unpacked; -vi 15.6 MB; -en 136.4 MB (jsDelivr's limit is ~150 MB).
 
 **Rule (owner, 2026-09-30): publish after every merge to `main`.** npm won't republish a version, so first bump the packages whose contents changed: the API when `packages/core` changed, a data package when its built data changed. Use patch bumps for data (0.1.x stays within `DATA_VERSION` `'0.1'`); if the data format changes, bump `DATA_VERSION` and the data minor version together. Publish data packages before the API. Docs-only changes outside the packages (like this file) don't need a publish, but READMEs are inside the packages.
+
+**Getting data in a fresh clone** (2026-09-30): `packages/*/data` is gitignored. `npm run fetch:data` downloads the newest published `DATA_VERSION`-compatible data package per language from the npm registry (tarball, unpacked with `tar`), refuses to overwrite existing data without `--force`, then runs `writePicks` for languages with picks (picks can be newer than the published data). Verified: fetched 0.1.0 data was byte-identical to the local build, and tests/evaluation matched. `npm run build:data:all` builds from Kaikki, **English first** (the bridge; picks are checked against it). Kaikki serves only its latest dump, so a from-scratch build can be newer than the published data.
+
+**Data dates:** `DATA_UPDATES.md` (committed) has a row per language (Kaikki Last-Modified = "Wiktionary data of", download date, entries) and a newest-first history. `recordDataUpdate()` in `build-language.ts` rewrites the row between `<!-- rows:start/end -->` (markers outside the table: a comment inside a Markdown table ends it) and adds a history line only when a language is new or its dump date changed, so rebuilds from the same dump don't change the file. Manual notes (publishing) go in the history. The README links to it near the top with the current date. Commit it after a refresh.
 
 **How:** rebuild changed languages (`--refresh` only when deliberately refreshing data), run `npm test`, `npm run typecheck` and `npm run evaluate`, then `npm publish -w which-dialect-vi --access public`, `-w which-dialect-en`, `-w which-dialect`. The account has **2FA**, so every publish needs a one-time code. That works reliably only in the owner's own terminal: npm asks `Enter one-time password:` after packing. Inside Claude Code's `!` prompt there is no interactive prompt (instant `EOTP`), and `--otp=<code>` there usually expires before the upload. `which-dialect` builds `dist/` itself (`prepublishOnly`).
 

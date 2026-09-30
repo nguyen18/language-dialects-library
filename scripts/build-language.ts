@@ -26,6 +26,7 @@ import {
   type StoredPronounRow,
   type WordShard,
 } from '../packages/core/src/types.ts'
+import { recordDataUpdate } from './data-updates.ts'
 import { writePicks } from './picks.ts'
 import { buildPronounTable } from './pronouns.ts'
 import { loadFrequencies, WORDFREQ_CREDIT } from './frequency.ts'
@@ -373,6 +374,7 @@ async function main() {
   }
   await writeFile(join(outDir, 'meta.json'), JSON.stringify(meta, null, 2))
   await writePicks(config)
+  await recordDataUpdate(ROOT, { lang: config.lang, name: config.name, lastModified: source.lastModified, retrieved: source.retrieved, entries: entries.length })
 
   let bytes = 0
   for (const [sub, names] of [['words', wordShards], ['en', enShards]] as const) {

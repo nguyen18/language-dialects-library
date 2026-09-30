@@ -18,6 +18,8 @@ await tr.translate('cool', { from: 'en', to: 'vi', toRegion: 'Southern', meaning
 
 Each result is a list of **groups, one per meaning** of the source word, each with its part of speech, its definitions and its translations, so a word's meanings never get mixed up.
 
+**Data:** Wiktionary data of 2026-09-25 for both languages. See [`DATA_UPDATES.md`](DATA_UPDATES.md) for each language's dates and update history.
+
 You install one small package. Dictionary data is **not bundled**: each lookup fetches one small file (usually 5–100 kB compressed) from the language's data package on the jsDelivr CDN, and caches it.
 
 ## Languages
@@ -182,10 +184,16 @@ If you **redistribute modified data**, it has to stay under CC BY-SA 4.0. Using 
 
 Requires Node 22.6+ (TypeScript scripts run with `--experimental-strip-types`).
 
+Generated data (`packages/<code>/data`) isn't committed, so a fresh clone needs it first. Two ways:
+
+- **Quick start: `npm run fetch:data`.** Downloads the published data packages from npm (a few seconds), then rebuilds hand-picked words from the repo's configs. You get exactly the published data, so tests and `npm run evaluate` match the numbers in this README. Use this unless you're changing how data is built.
+- **Build from Wiktionary: `npm run build:data:all`.** Downloads Kaikki's files (English 3.3 GB, Vietnamese 79 MB; cached in `.cache/`) and builds every language, **English first**: English is the bridge between languages, and other languages' hand-picked words are checked against it. Kaikki always serves its latest dump, so this can be newer than the published data; the build records the dates in [`DATA_UPDATES.md`](DATA_UPDATES.md). Building one language alone (`npm run build:data -- vi`) also works once English is built.
+
 ```sh
 npm install
-npm run build:data -- vi             # download Kaikki's file for a language (cached in .cache/) and build packages/<code>/data
-npm run build:data -- vi --refresh   # re-download first
+npm run fetch:data                   # quick start: the published data (-- --force replaces data you already have)
+npm run build:data:all               # or build every language from Kaikki, English first (-- --refresh re-downloads)
+npm run build:data -- vi             # build one language (after English); -- vi --refresh re-downloads first
 npm test                             # unit tests, plus checks against whichever languages are built
 npm run evaluate                     # translation accuracy on known-correct cases, with and without picks (-- --verbose to see every case)
 npm run build:picks -- vi            # rebuild only a language's hand-picked words (after editing `picks` in languages/vi.ts)
@@ -195,7 +203,7 @@ npm run typecheck
 npm run build                        # compile the API to packages/core/dist
 ```
 
-Generated data isn't committed (it would bloat git history); it's built before publishing. Downloads: Vietnamese 79 MB, English 3.3 GB. Builds take seconds (English: about 25 s and 1.4 GB of memory).
+Generated data isn't committed (it would bloat git history); it's built before publishing. Builds take seconds (English: about 25 s and 1.4 GB of memory).
 
 ### Adding a language
 
@@ -210,7 +218,7 @@ Languages in non-Latin scripts (Chinese, Arabic, Russian, …) will need a scrip
 ### Publishing
 
 ```sh
-npm run build:data -- en --refresh && npm run build:data -- vi --refresh && npm test
+npm run build:data:all -- --refresh && npm test    # records the new dates in DATA_UPDATES.md: commit it
 npm publish -w which-dialect-en
 npm publish -w which-dialect-vi
 npm publish -w which-dialect

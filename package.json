@@ -10,6 +10,8 @@
   },
   "scripts": {
     "build:data": "node --experimental-strip-types --disable-warning=ExperimentalWarning scripts/build-language.ts",
+    "build:data:all": "node --experimental-strip-types --disable-warning=ExperimentalWarning scripts/build-all.ts",
+    "fetch:data": "node --experimental-strip-types --disable-warning=ExperimentalWarning scripts/fetch-data.ts",
     "build:picks": "node --experimental-strip-types --disable-warning=ExperimentalWarning scripts/picks.ts",
     "picks-sheet": "node --experimental-strip-types --disable-warning=ExperimentalWarning scripts/picks-sheet.ts",
     "build": "npm run build -w which-dialect",
