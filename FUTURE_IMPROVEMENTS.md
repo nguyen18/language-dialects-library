@@ -72,6 +72,55 @@ meaning none). **Suggested approach:** check a table against the sense it's on (
 translations' definitions overlap the sense's?) and move it to the best-matching sense of the same
 entry at build time, like `attachEntryTranslations` does for entry-level tables.
 
+### Hand-picked first choices ("picks" layer) — planned next
+
+**Problem:** for common words a native speaker knows the natural first choice, and the data sometimes
+doesn't say it. *get* "To fetch, bring, take" ranks *đưa* above *lấy* because *đưa*'s definition ("to
+bring, to take, to give, to hand") matches more of the English words and no *lấy* sense says "fetch".
+Ranking rules can't fix that without special cases.
+
+**Design (agreed with the owner, 2026-09-30):** a small hand-curated layer **on top of** the ranking,
+never instead of it.
+
+- **Keyed by English meaning, not by language pair:** `languages/<lang>.picks.ts` (or similar), rows
+  `{ word: 'get', gloss: /fetch/, pos?: 'verb', picks: [{ word: 'lấy' }, { word: 'mang' }] }`. Each
+  language adds one list, so work grows with the number of languages, not with pairs. Non-English
+  sources reach them the way translation tables do (`tableFor()`): source meaning → matching English
+  meaning → the target language's picks. Same format as Wiktionary tables, so good picks can be
+  contributed upstream.
+- **Where results go:** `translate()` keeps one group per meaning, in the same meaning order. In a
+  group whose English meaning has picks: picked words first (in the listed order, `bridge: 'picked'`),
+  then the ranked words as today (duplicates of picks removed), cut at `limit` (picks count toward it).
+  Meanings without picks are unchanged.
+- **Regions:** a pick can carry a region, like tables (`{ word: 'heo', tags: ['Southern'] }`); reuse the
+  table's region logic (tagged for `toRegion` first, other regions' picks lower).
+- **Meaning order:** picks don't move meanings by default. An optional per-row flag can put that meaning
+  first when no context is given (e.g. *got* → "have"); opt-in, since it claims what people usually mean.
+- **Source-language keys where English loses distinctions:** English "rice" collapses *gạo*/*cơm*/*lúa*,
+  "you" collapses *anh*/*em*/*chị*/*bạn*; bridging two non-English languages through English compounds
+  that. Rows can instead be keyed by a source-language meaning, like the (Vietnamese-specific) pronoun
+  table.
+- **Robustness:** Wiktionary rewords definitions on refresh, so the build checks every row still matches
+  a sense and **warns** when not (like `scripts/pronouns.ts`).
+- **Keep the ranking visible:** a `picks: false` translator option, and `npm run evaluate` reports with
+  and without picks, so scores measure the ranking and the long tail (never hand-picked) doesn't quietly
+  get worse.
+- **Scope:** only common words where a native speaker notices a wrong answer. Start with the top-100
+  list (`~/dev/top_100_words.txt`, already used for before/after comparisons): generate a sheet of each
+  word's meanings and current top 3, the owner marks the right first choice, and rows are written from
+  that. First candidates: get "fetch" → lấy, mang; get "obtain" → lấy.
+
+### The English word itself as weak evidence for words with many meanings ("fix 2")
+
+**Problem:** the English word itself is always a main search term, so for *get* (33 meanings) every
+meaning picks up words that only match "get" in some sense (*bắt* "catch" under "have" and "become";
+*hóng*, *ra khỏi*). **What we found (2026-09-30, prototype):** dropping the main-term bonus for the
+English word when it has ≥ 10 meanings of that part of speech cleaned up most of *get*'s meanings (have
+→ có, phải, dùng; become → ra, thành, trở thành) but added other noise (*bỏ* for fetch, *mắc phải* 4th
+for obtain) and affects every common English word (*run*, *take*, *make*, *go*, *set*…).
+**Suggested approach:** revisit with the top-100 comparison, alone and after picks exist. Related noise:
+English bridge words with two meanings (*do* "To perform; to execute" → *tử hình*, execute = put to death).
+
 ## Pronouns
 
 - **Possessives:** plain "her" leads with its possessive sense ("belonging to her"), Wiktionary's first,
