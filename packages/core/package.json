@@ -1,7 +1,7 @@
 {
   "name": "which-dialect",
   "version": "0.1.0",
-  "description": "Find how words are said in different regions and dialects of a language (Spanish, Vietnamese, …), with Wiktionary data loaded on demand.",
+  "description": "Translate words between languages and dialects, meaning by meaning, starting with Vietnamese (Northern, Central, Southern) and English, with Wiktionary data loaded on demand. More languages are planned.",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -26,7 +26,6 @@
     "translation",
     "language-learning",
     "wiktionary",
-    "spanish",
     "vietnamese"
   ],
   "license": "MIT",

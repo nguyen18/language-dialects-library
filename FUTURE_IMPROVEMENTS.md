@@ -34,8 +34,9 @@ source sense is itself a letter.
 
 **Problem:** `tableFor()` looks up English bridge terms, which are lowercase, so for "I" it finds the
 letter *i*, not the pronoun *I*, and misses its translation table. Spanish *yo* → Vietnamese missed
-*tôi* because of this. `englishCandidates()` had the same bug and was fixed (it also looks up the
-capitalized word and prefers the exact part of speech); `tableFor()` needs the same fix.
+*tôi* because of this (when Spanish was supported). `englishCandidates()` had the same bug and was
+fixed (it also looks up the capitalized word and prefers the exact part of speech); `tableFor()` needs
+the same fix.
 
 ## Pronouns
 
@@ -48,17 +49,33 @@ capitalized word and prefers the exact part of speech); `tableFor()` needs the s
 - **Fresh held-out evaluation cases:** the held-out set has been looked at; write new held-out pronoun
   cases (I/you/he/we, with and without `listener`/`about`) before relying on it again.
 
-## Spanish
+## More languages
 
-The owner plans to remove Spanish in a refactor. Known Spanish problems, in case it stays or comes back:
-"you" leads with object forms (*le*, *os*) and mostly misses *tú*; "we" includes *escritor*/*pluma*
-(the editorial-we sense); *tú* → Vietnamese gives dialectal *mầy*/*bay*; *ellos* → Vietnamese gives
-nothing; *cerdo* without `pos` fails (its adjective sense "dirty" is listed first). The rebuilt Spanish
-data will also pick up the subpage-title fix ("i/languages M to Z" → *i*).
+which-dialect is starting with Vietnamese (English is the bridge), and the current focus is cleaning up
+Vietnamese. More languages are planned; the code is language-general (region groups, `skipFormOf`,
+`translationLangs`, the pronoun table), so adding one is a config file plus a data package (README:
+"Adding a language").
 
-Removing Spanish also frees space in the English data: it stores Spanish translation tables
-(`translationLangs` in `languages/en.ts`), and English is at 140.2 MB, close to jsDelivr's ~150 MB
-package limit.
+### Spanish (removed 2026-09-30, to add back later)
+
+Spanish was supported from 2026-09-27 and removed to focus on Vietnamese. To bring it back: restore
+`languages/es.ts` and `packages/es/` from git history (last in commit `e0136ed`), add `'es'` back to
+`translationLangs` in `languages/en.ts`, rebuild es and en, and restore the Spanish test suite and
+evaluation cases (also in that commit). Known problems to fix when it comes back:
+
+- "you" leads with object forms (*le*, *os*) and mostly misses *tú*: Wiktionary lists the plural and
+  object senses of "you" first, and their tables are object clitics.
+- "we" includes *escritor*/*pluma*, from the editorial-we sense.
+- *tú* → Vietnamese gives dialectal *mầy*/*bay*/*bây*, far stronger than *tú*.
+- *ellos* → Vietnamese gives nothing.
+- *yo* → Vietnamese misses *tôi* (the lowercase "i" bug in `tableFor`, above).
+- *cerdo* without `pos` fails: its adjective sense ("dirty") is listed first.
+- A pronoun table for Spanish could cover *tú* / *usted* / *vos* by relationship and region.
+- The Spanish data needs a rebuild to pick up the subpage-title fix ("i/languages M to Z" → *i*).
+
+Removing Spanish also shrank the English data from 140.2 to 136.2 MB (it stored Spanish translation
+tables), leaving more room under jsDelivr's ~150 MB package limit. Adding languages back will grow it
+again; check the size each time.
 
 ## Publishing and apps
 
