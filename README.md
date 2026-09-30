@@ -53,6 +53,8 @@ Loads each language's data on demand. The options are only needed to self-host t
 | `pos` | Only source senses with this part of speech, e.g. `'noun'`. |
 | `meaning` | A few words describing the meaning you want, e.g. `'awesome'` for *cool*. Matching senses and words rank first. |
 | `register` | `'casual'`, `'neutral'` or `'polite'`: the register you want translations in, instead of the source's own. `'casual'` favors colloquial words (Southern *tui* for "I"). |
+| `listener` | Who you're talking to, as a row id of the target language's pronoun table (Vietnamese: `'parent'`, `'older-male'`, `'friend'`, …; see `dictionary.pronouns()`). For "I"/"me" and "you" that relationship's words come first: *I* to a parent → *con*; *you* → Southern *ba*, *má*. Ignored for languages without a pronoun table. |
+| `speaker` | `'male'` or `'female'`, for pronouns that depend on it (*anh* vs *chị* toward someone younger). |
 | `exclude` | Labels to leave out (default: vulgar, offensive, derogatory, archaic, obsolete, dated, historical, rare, abbreviation). |
 | `limit` | Translations per meaning (default 5). |
 | `allSenses` | Return every meaning, including ones with no translation, instead of only useful ones. For letting users pick a meaning. |
@@ -60,7 +62,8 @@ Loads each language's data on demand. The options are only needed to self-host t
 It returns `TranslationGroup[]`, most relevant meaning first. Each group has:
 
 - `source`: the meaning being translated: `lemma` (the base or standard word, e.g. *say* for *said*), `pos`, `glosses` (its English definitions), `regions`, `labels`, and `via` when the word led there ("simple past of say", "Southern Vietnam form of không").
-- `translations`: target words, best first, each with its own `pos`, `gloss`, `regions`, `labels`, a `score`, and `bridge` (how it was found).
+- `translations`: target words, best first, each with its own `pos`, `gloss`, `regions`, `labels`, a `score`, and `bridge` (how it was found; `'pronouns'` for the listener's words, which also carry `relationship`, e.g. "Your parents").
+- `relationships` (singular "I"/"you" meanings into a language with a pronoun table): the word for each relationship, `{ id, label, words, warning? }`, filtered by `toRegion`, `speaker` and `exclude`, for showing "it depends on who you're talking to".
 
 ### `translator.senses(word, { from, fromRegion?, pos? })`
 
@@ -97,11 +100,11 @@ One language's dictionary. `baseUrl` defaults to `https://cdn.jsdelivr.net/npm/w
 - `dictionary.lookup(word)`: all entries for a word, with every sense's definitions, regions, labels, synonyms and variant links (`altOf`).
 - `dictionary.searchEnglish(term, { region?, pos?, exclude?, limit?, allSenses? })`: words for an English term in this language, one per word, best first (no meaning handling: use the translator for that). `allSenses: true` returns every matching sense of those words instead.
 - `dictionary.meta()`: the language's name, regions, region groups, source, license, build date and counts.
-- `dictionary.address({ listener?, region?, speaker?, exclude? })`: how to say "I" and "you" depending on who you're talking to, one row per relationship, for languages whose pronouns depend on it (so far Vietnamese; empty for others). Each word says whether it comes from a dictionary definition (`source: 'gloss'`, with the `gloss`) or a hand-written override (`source: 'override'`, with a `note`).
+- `dictionary.pronouns({ listener?, region?, speaker?, exclude? })`: how to say "I" and "you" depending on who you're talking to, one row per relationship, for languages whose pronouns depend on it (so far Vietnamese; empty for others). Each word says whether it comes from a dictionary definition (`source: 'gloss'`, with the `gloss`) or a hand-written override (`source: 'override'`, with a `note`).
 
 ```js
 const vi = createDictionary({ lang: 'vi' })
-const [parents] = await vi.address({ listener: 'parent', region: 'Southern' })
+const [parents] = await vi.pronouns({ listener: 'parent', region: 'Southern' })
 parents.self.map((c) => c.word)      // ['con']
 parents.addressee.map((c) => c.word) // ['ba', 'má', 'mẹ']
 ```

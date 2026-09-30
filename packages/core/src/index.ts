@@ -2,12 +2,12 @@ import {
   fromStored,
   normalizeEnglish,
   shardKey,
-  type AddressRow,
+  type PronounRow,
   type EnglishShard,
   type Entry,
   type Hit,
   type LanguageMeta,
-  type StoredAddressRow,
+  type StoredPronounRow,
   type WordShard,
 } from './types.ts'
 
@@ -65,7 +65,7 @@ export type SearchOptions = {
   allSenses?: boolean
 }
 
-export type AddressOptions = {
+export type PronounOptions = {
   /** Only this relationship's row, by id (e.g. "parent"). Unknown ids throw, listing the valid ones. */
   listener?: string
   /** Only words used in this region or region group; untagged words count as every region. */
@@ -88,9 +88,9 @@ export type Dictionary = {
   searchEnglish(term: string, options?: SearchOptions): Promise<Hit[]>
   /**
    * How to say "I" and "you" depending on who you're talking to, one row per relationship, for languages
-   * whose pronouns depend on it (Vietnamese). Empty for languages without an address table.
+   * whose pronouns depend on it (Vietnamese). Empty for languages without a pronoun table.
    */
-  address(options?: AddressOptions): Promise<AddressRow[]>
+  pronouns(options?: PronounOptions): Promise<PronounRow[]>
 }
 
 /**
@@ -192,16 +192,16 @@ export function createDictionary(options: DictionaryOptions): Dictionary {
       return ranked.filter((h) => kept.has(h.word))
     },
 
-    async address({ listener, region, speaker, exclude = DEFAULT_EXCLUDED_LABELS } = {}) {
+    async pronouns({ listener, region, speaker, exclude = DEFAULT_EXCLUDED_LABELS } = {}) {
       const m = await meta()
-      if (!m.address) return []
-      const rows = await loadOnce<StoredAddressRow[]>('address.json')
+      if (!m.pronouns) return []
+      const rows = await loadOnce<StoredPronounRow[]>('pronouns.json')
       if (listener && !rows.some((r) => r.id === listener)) {
         throw new Error(`which-dialect: unknown listener "${listener}" for ${m.name}. Use one of: ${rows.map((r) => r.id).join(', ')}`)
       }
       const wanted = resolveRegion(m, region)
       const excluded = new Set(exclude)
-      const keep = (c: AddressRow['self'][number]) =>
+      const keep = (c: PronounRow['self'][number]) =>
         (!wanted || c.regions.some((r) => wanted.has(r))) &&
         (!speaker || !c.speaker || c.speaker === speaker) &&
         !c.labels.some((l) => excluded.has(l))

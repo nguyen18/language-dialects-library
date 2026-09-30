@@ -87,17 +87,17 @@ export type LanguageMeta = {
   shards: { words: string[]; en: string[] }
   /** Letters per shard key; see shardKey. Omitted means 2. */
   shardLength?: number
-  /** true when the language has an address table (address.json, see AddressRow). */
-  address?: boolean
+  /** true when the language has a pronoun table (pronouns.json, see PronounRow). */
+  pronouns?: boolean
 }
 
 /**
- * One word in the address table: how to say "I" (a row's `self`) or "you" (its `addressee`) in one
+ * One word in the pronoun table: how to say "I" (a row's `self`) or "you" (its `addressee`) in one
  * relationship. Most come from a dictionary definition that describes the relationship ("you, a male
  * who's (presumably) slightly older than me"); the rest are hand-written overrides for what the
  * definitions don't say (Vietnamese "em" is never defined as "I").
  */
-export type AddressChoice = {
+export type PronounChoice = {
   word: string
   /** The definition this choice comes from. Omitted for overrides. */
   gloss?: string
@@ -115,21 +115,21 @@ export type AddressChoice = {
  * A relationship and the words for it, e.g. Vietnamese "Your parents": you say "con", you call them
  * "ba"/"má" (Southern) or "bố"/"mẹ".
  */
-export type AddressRow = {
+export type PronounRow = {
   /** Stable id, e.g. "parent", "older-male". */
   id: string
   /** Who you're talking to, for display: "Your parents". */
   label: string
   /** How to say "I". */
-  self: AddressChoice[]
+  self: PronounChoice[]
   /** How to say "you". */
-  addressee: AddressChoice[]
+  addressee: PronounChoice[]
   /** A caution for the whole row, e.g. that "tao"/"mày" are rude outside close friendships. */
   warning?: string
 }
 
-export type StoredAddressChoice = Omit<AddressChoice, 'regions' | 'regionTagged' | 'labels'> & { regions?: string[]; labels?: string[] }
-export type StoredAddressRow = Omit<AddressRow, 'self' | 'addressee'> & { self: StoredAddressChoice[]; addressee: StoredAddressChoice[] }
+export type StoredPronounChoice = Omit<PronounChoice, 'regions' | 'regionTagged' | 'labels'> & { regions?: string[]; labels?: string[] }
+export type StoredPronounRow = Omit<PronounRow, 'self' | 'addressee'> & { self: StoredPronounChoice[]; addressee: StoredPronounChoice[] }
 
 // Stored forms. To keep files small, a sense with no region tag has no `regions` (it means every
 // region, regionTagged false), and empty `labels` are left out. The API fills both back in.
