@@ -38,6 +38,40 @@ letter *i*, not the pronoun *I*, and misses its translation table. Spanish *yo* 
 fixed (it also looks up the capitalized word and prefers the exact part of speech); `tableFor()` needs
 the same fix.
 
+## Meaning order
+
+### Words whose own meaning competes with a form of another word ("felt", "saw")
+
+**Problem:** without context, a word's meanings come in the dictionary's order, own entries first. So
+*felt* starts with the fabric (*phớt*) before "feel" (*cảm thấy*), and *saw* with the tool (*cưa*)
+before "see" (*thấy*). In everyday text the past tense is usually meant. The 2026-09-30 fix for
+inflected forms (*got* → "Have/has." → *có* first, see ARCHITECTURE.md) deliberately **doesn't change
+this**: it only reorders a form's own colloquial meanings, and keeps a form's own entries ahead of its
+base word's, as before. Other words like this: *left* (the side / past of leave), *found* (to establish /
+past of find), *lay*, *rose*, *bore*, *wound*.
+
+**What we found (2026-09-30):** deciding needs to know which meaning is more common, and the data
+doesn't say. The obvious signal, how many languages translate each meaning in Wiktionary's translation
+tables, is unreliable because Kaikki often attaches tables to the wrong meaning: *dog*'s 683-language
+table sits on "Someone who overeats" (the animal has none), *want*'s 169-language table on "To desire
+(to experience desire)" (not "To wish for"), *get*'s on "To receive" (not "To obtain"), *see*'s on "To
+understand". Ranking by table size would make many common words worse. The dictionary's order is
+otherwise mostly right (dog → animal, see → with the eyes, cool → temperature, just → only).
+
+**Suggested approach:** compare the word's own frequency with the base word's (wordfreq has *felt* and
+*feel*, but counts every use of the spelling, so this alone can't separate them); or use corpus counts
+per meaning (WordNet's SemCor counts, English only; mapping WordNet's meanings to Wiktionary's is
+substantial and imperfect); or let callers pass `pos` (a past-tense *felt* is a verb, the fabric a
+noun). Until then, apps should pass `pos` or `meaning` when they know the context.
+
+### Translation tables attached to the wrong meaning
+
+**Problem:** the misattached tables above also affect translation: `TABLE_BONUS` (+4) goes to words
+listed for a meaning, so a table on the wrong meaning boosts the wrong words there (and gives the right
+meaning none). **Suggested approach:** check a table against the sense it's on (do its English
+translations' definitions overlap the sense's?) and move it to the best-matching sense of the same
+entry at build time, like `attachEntryTranslations` does for entry-level tables.
+
 ## Pronouns
 
 - **Possessives:** plain "her" leads with its possessive sense ("belonging to her"), Wiktionary's first,

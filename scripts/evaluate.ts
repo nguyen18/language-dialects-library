@@ -40,6 +40,10 @@ export const CASES: Case[] = [
   c(pair('en', undefined, 'vi', undefined), 'want', ['muốn']),
   c(enViS, 'want', ['muốn']),
   c(enViN, 'want', ['muốn']),
+  // A form's own colloquial meanings ("got": "Have/has.", "Must; have/has (to).") before its base word's.
+  c(pair('en', undefined, 'vi', undefined), 'got', ['có']),
+  c(pair('en', undefined, 'vi', undefined), 'got', ['phải'], { meaning: 'must' }),
+  c(pair('en', undefined, 'vi', undefined), 'get', ['được', 'lấy', 'nhận']),
   c(enViS, 'said', ['nói']),
   c(enViS, 'computer', ['máy tính', 'máy vi tính']),
   c(enViS, 'corn', ['bắp']),

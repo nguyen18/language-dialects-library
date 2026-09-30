@@ -288,8 +288,18 @@ const MIN_SCORE = 1
 // ranks below the word's own meanings.
 const SPELLING_VIA = /pronunciation spelling|misspelling|eye dialect|nonstandard spelling|dated spelling|informal spelling/i
 
+// Among a form's own meanings, one that needs a following construction ("Must; have/has (to).", "used
+// with have", "followed by …") is narrower than a standalone one ("got": "Have/has." comes first). Only
+// there: function words' main meanings are constructions ("would": "Past tense of will; usually
+// followed by a bare infinitive"), and demoting them everywhere put "would" → "hoàn cảnh" first.
+const CONSTRUCTION = /\((?:to|with [^)]*|followed by [^)]*)\)|\bused with\b|\bfollowed by\b/i
+
 // Senses whose labels are all in this set rank after mainstream senses.
 const MARGINAL_LABELS = new Set(['informal', 'slang', 'colloquial', 'dialectal', 'rare', 'nonstandard', 'Internet', 'humorous'])
+// How a form reached its base word, when it's an inflection ("simple past of get", "form of run").
+const INFLECTION_VIA = /\b(?:past|participle|plural|singular|present|third-person|comparative|superlative|gerund)\b|^form of /i
+// Everyday speech, not slang: a form's own colloquial meaning ("got": "Have/has.") isn't marginal.
+const EVERYDAY_LABELS = new Set(['informal', 'colloquial'])
 const LABEL_PENALTY = new Set(['slang', 'Internet', 'humorous', 'literary', 'dialectal', 'uncommon', 'rare', 'euphemistic'])
 
 // A target gloss that lists the bridge term itself as an equivalent ("muốn": "to want"; "má": "mother;
@@ -951,16 +961,34 @@ export function createTranslator(options: TranslatorOptions = {}): Translator {
         const chosen = ABOUT_PERSONS.has(p.person) ? about : listener
         return (chosen ? 10 : 0) - (hasSingular && !SINGULAR_PERSONS.has(p.person) ? 3 : 0)
       }
+      // A form with its own entries ("got": "Have/has.", colloquial) as well as its base word's ("get"):
+      // the form's own meanings are why it has entries at all, so they stay ahead of the base word's, and
+      // a colloquial/informal label doesn't push them behind (slang and Internet labels still do: "felt"
+      // "To thoroughly defeat", Internet). A construction ("Must; have/has (to).") then only reorders
+      // them among themselves.
+      // Only inflections ("got": simple past of get), not contractions ("kinda") or spelling variants.
+      const formWithBase = ownSenses && sourceSenses.some((s) => s.via && INFLECTION_VIA.test(s.via))
+      const labelRelevance = (g: TranslationGroup) => {
+        const { labels } = g.source
+        const marginal = labels.length > 0 && labels.every((l) => MARGINAL_LABELS.has(l))
+        const everyday = labels.length > 0 && labels.every((l) => EVERYDAY_LABELS.has(l))
+        if (formWithBase && !g.source.via && (!marginal || everyday)) {
+          return 1 - (CONSTRUCTION.test(g.source.glosses.join(' ')) ? 0.5 : 0)
+        }
+        return marginal ? -1 : 0
+      }
       const relevance = (g: TranslationGroup) =>
         (meaningWords
           ? 10 * meaningOverlap(meaningWords, g.source.glosses.join(' ')) + 5 * meaningOverlap(meaningWords, g.translations[0]?.gloss ?? '')
           : 0) -
         (ownSenses && g.source.via && SPELLING_VIA.test(g.source.via) ? 2 : 0) +
         (fromRegion && g.source.regionTagged ? 3 : 0) +
-        pronounRelevance(g) -
-        (g.source.labels.length && g.source.labels.every((l) => MARGINAL_LABELS.has(l)) ? 1 : 0)
+        pronounRelevance(g) +
+        labelRelevance(g)
+      // A sense with no translations says nothing, so it goes after the ones that do ("got": "Expressing
+      // obligation; used with have." finds nothing; "Must; have/has (to)." gives "phải").
       const ordered = groups
-        .map((g, i) => ({ g, i, r: relevance(g) }))
+        .map((g, i) => ({ g, i, r: relevance(g) - (g.translations.length ? 0 : 100) }))
         .sort((a, b) => b.r - a.r || a.i - b.i)
         .map((x) => x.g)
       if (allSenses) return ordered
