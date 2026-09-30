@@ -361,14 +361,22 @@ const STOPWORDS = new Set(
     'particular certain various generally sense usage meaning').split(' '),
 )
 
-function contentWords(text: string): Set<string> {
+function contentWords(text: string, keep?: Set<string>): Set<string> {
   return new Set(
     text
       .toLowerCase()
       .replace(/[^a-z' ]+/g, ' ')
       .split(' ')
-      .filter((w) => w.length > 2 && !STOPWORDS.has(w)),
+      .filter((w) => w.length > 2 && (!STOPWORDS.has(w) || keep?.has(w))),
   )
+}
+
+// The caller's `meaning` words all count, even ones too common to count in definitions ("have" picks
+// "got" = "To have", not "To obtain").
+function meaningOverlap(words: Set<string>, text: string): number {
+  let n = 0
+  for (const w of contentWords(text, words)) if (words.has(w)) n++
+  return n
 }
 
 function overlap(a: Set<string>, text: string): number {
@@ -725,7 +733,7 @@ export function createTranslator(options: TranslatorOptions = {}): Translator {
       if (about && toMeta.pronouns) await dict(to).pronouns({ listener: about })
       const toWanted = resolveRegion(toMeta, toRegion)
       const hasFrequencies = Boolean(toMeta.frequencySource)
-      const meaningWords = meaning ? contentWords(meaning) : null
+      const meaningWords = meaning ? contentWords(meaning, new Set(meaning.toLowerCase().split(/[^a-z']+/))) : null
 
       const groups: TranslationGroup[] = []
       for (const sense of sourceSenses) {
@@ -945,7 +953,7 @@ export function createTranslator(options: TranslatorOptions = {}): Translator {
       }
       const relevance = (g: TranslationGroup) =>
         (meaningWords
-          ? 10 * overlap(meaningWords, g.source.glosses.join(' ')) + 5 * overlap(meaningWords, g.translations[0]?.gloss ?? '')
+          ? 10 * meaningOverlap(meaningWords, g.source.glosses.join(' ')) + 5 * meaningOverlap(meaningWords, g.translations[0]?.gloss ?? '')
           : 0) -
         (ownSenses && g.source.via && SPELLING_VIA.test(g.source.via) ? 2 : 0) +
         (fromRegion && g.source.regionTagged ? 3 : 0) +

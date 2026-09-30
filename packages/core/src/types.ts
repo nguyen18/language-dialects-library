@@ -241,8 +241,10 @@ export function glossTerms(gloss: string): [string, number][] {
   if (cleaned.includes(':')) cleaned = cleaned.slice(cleaned.lastIndexOf(':') + 1)
   const terms: [string, number][] = []
   let position = 0
-  // "I/me" lists two meanings, like "I; me".
-  for (const part of cleaned.split(/[;,/]/)) {
+  // "I/me" lists two meanings, like "I; me". Sentences too: "To have. See usage notes." means "have",
+  // and cross-references ("See usage notes", "Compare shall", "Synonym: …") aren't meanings.
+  for (const part of cleaned.split(/[;,/]|\.\s+/)) {
+    if (/^\s*(?:see|compare|cf|synonyms?|antonyms?)\b/i.test(part)) continue
     // "etc." is not a meaning: "walking etc" -> "walking", and a lone "etc" is skipped.
     const t = normalizeEnglish(part.replace(/[.!?]+\s*$/, '').replace(/\betc\.?$/i, '').trim())
     if (!t || t.split(' ').length > 4 || !/^[a-z][a-z' -]*$/.test(t)) continue
