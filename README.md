@@ -53,7 +53,8 @@ Loads each language's data on demand. The options are only needed to self-host t
 | `pos` | Only source senses with this part of speech, e.g. `'noun'`. |
 | `meaning` | A few words describing the meaning you want, e.g. `'awesome'` for *cool*. Matching senses and words rank first. |
 | `register` | `'casual'`, `'neutral'` or `'polite'`: the register you want translations in, instead of the source's own. `'casual'` favors colloquial words (Southern *tui* for "I"). |
-| `listener` | Who you're talking to, as a row id of the target language's pronoun table (Vietnamese: `'parent'`, `'older-male'`, `'friend'`, …; see `dictionary.pronouns()`). For "I"/"me" and "you" that relationship's words come first: *I* to a parent → *con*; *you* → Southern *ba*, *má*. Ignored for languages without a pronoun table. |
+| `listener` | Who you're talking to, as a row id of the target language's pronoun table (Vietnamese: `'parent'`, `'older-male'`, `'friend'`, …; see `dictionary.pronouns()`). For "I"/"me", "you", "we"/"us" and plural "you" that relationship's words come first: *I* to a parent → *con*; *you* → Southern *ba*, *má*; *we* → *chúng con*. Without it, the table's neutral default row leads (*I* → *tôi*, *you* → *bạn*). Ignored for languages without a pronoun table. |
+| `about` | Who you're talking about, as a row id like `listener`, for "he"/"him", "she"/"her" and "they"/"them": *he* about a grandparent → *ông ấy* (Southern *ổng*); *she* about a teacher → *cô*. Without it, the default row leads (*he* → *anh ấy*, Southern *ảnh*; *they* → *họ*). |
 | `speaker` | `'male'` or `'female'`, for pronouns that depend on it (*anh* vs *chị* toward someone younger). |
 | `exclude` | Labels to leave out (default: vulgar, offensive, derogatory, archaic, obsolete, dated, historical, rare, abbreviation). |
 | `limit` | Translations per meaning (default 5). |
@@ -101,7 +102,7 @@ One language's dictionary. `baseUrl` defaults to `https://cdn.jsdelivr.net/npm/w
 - `dictionary.lookup(word)`: all entries for a word, with every sense's definitions, regions, labels, synonyms and variant links (`altOf`).
 - `dictionary.searchEnglish(term, { region?, pos?, exclude?, limit?, allSenses? })`: words for an English term in this language, one per word, best first (no meaning handling: use the translator for that). `allSenses: true` returns every matching sense of those words instead.
 - `dictionary.meta()`: the language's name, regions, region groups, source, license, build date and counts.
-- `dictionary.pronouns({ listener?, region?, speaker?, exclude? })`: how to say "I" and "you" depending on who you're talking to, one row per relationship, for languages whose pronouns depend on it (so far Vietnamese; empty for others). Each word says whether it comes from a dictionary definition (`source: 'gloss'`, with the `gloss`) or a hand-written override (`source: 'override'`, with a `note`).
+- `dictionary.pronouns({ listener?, region?, speaker?, exclude? })`: how to say "I", "you", "he/she", "we", plural "you" and "they" depending on who you're talking to (or about), one row per relationship, for languages whose pronouns depend on it (so far Vietnamese; empty for others). Each row has the columns `self`, `addressee`, `third`, `selfPlural`, `addresseePlural` and `thirdPlural`. Each word says where it comes from: a dictionary definition (`source: 'gloss'`, with the `gloss`), a grammar rule for a regular compound the dictionary doesn't list (`source: 'rule'`, e.g. *các anh*, with a `note`), or a hand-written override (`source: 'override'`, with a `note`); and, when it has one, the `gender` of the person it refers to and whether a "we" is `inclusive`.
 
 ```js
 const vi = createDictionary({ lang: 'vi' })
@@ -110,7 +111,7 @@ parents.self.map((c) => c.word)      // ['con']
 parents.addressee.map((c) => c.word) // ['ba', 'má', 'mẹ']
 ```
 
-Vietnamese rows: `friend`, `close-friend`, `older-male`, `older-female`, `younger`, `parent`, `parents-age`, `grandparents-age`, `teacher`, `partner`, `formal`. `speaker: 'male' | 'female'` resolves choices like *anh* vs *chị* toward someone younger.
+Vietnamese rows: `general` (the default: neutral words), `friend`, `close-friend`, `older-male`, `older-female`, `younger`, `parent`, `parents-age`, `grandparents-age`, `teacher`, `partner`, `formal`. `speaker: 'male' | 'female'` resolves choices like *anh* vs *chị* toward someone younger.
 
 ## Parts of speech
 

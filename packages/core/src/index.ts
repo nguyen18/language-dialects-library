@@ -1,4 +1,5 @@
 import {
+  PRONOUN_PERSONS,
   fromStored,
   normalizeEnglish,
   shardKey,
@@ -87,8 +88,9 @@ export type Dictionary = {
    */
   searchEnglish(term: string, options?: SearchOptions): Promise<Hit[]>
   /**
-   * How to say "I" and "you" depending on who you're talking to, one row per relationship, for languages
-   * whose pronouns depend on it (Vietnamese). Empty for languages without a pronoun table.
+   * How to say "I", "you", "he/she", "we", plural "you" and "they" depending on who you're talking to
+   * (or about), one row per relationship, for languages whose pronouns depend on it (Vietnamese). Empty
+   * for languages without a pronoun table.
    */
   pronouns(options?: PronounOptions): Promise<PronounRow[]>
 }
@@ -207,11 +209,11 @@ export function createDictionary(options: DictionaryOptions): Dictionary {
         !c.labels.some((l) => excluded.has(l))
       return rows
         .filter((r) => !listener || r.id === listener)
-        .map((r) => ({
-          ...r,
-          self: r.self.map((c) => fromStored(c, m.regions)).filter(keep),
-          addressee: r.addressee.map((c) => fromStored(c, m.regions)).filter(keep),
-        }))
+        .map((r) => {
+          const row = { ...r } as PronounRow
+          for (const person of PRONOUN_PERSONS) row[person] = (r[person] ?? []).map((c) => fromStored(c, m.regions)).filter(keep)
+          return row
+        })
     },
   }
 }

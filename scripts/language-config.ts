@@ -65,17 +65,21 @@ export type LanguageConfig = {
 
 /**
  * One cell entry of the pronoun table. With `gloss`, a pronoun sense of `word` whose definition matches
- * it (region, labels and the definition come from that sense). Without, an override for something the
- * definitions don't say; `note` then says why it's there.
+ * it (region, labels and the definition come from that sense). With `rule`, a regular compound the
+ * dictionary doesn't list ("các anh"); `note` names the rule. Otherwise an override for something the
+ * definitions don't say; `note` then says why it's there. Rules and overrides can give regions and labels.
  */
-export type PronounPick =
-  | { word: string; gloss: RegExp; speaker?: 'male' | 'female'; note?: string }
-  | { word: string; gloss?: undefined; speaker?: 'male' | 'female'; regions?: string[]; labels?: string[]; note: string }
+type PronounPickExtra = { speaker?: 'male' | 'female'; gender?: 'male' | 'female'; inclusive?: boolean }
+export type PronounPick = PronounPickExtra &
+  (
+    | { word: string; gloss: RegExp; note?: string }
+    | { word: string; gloss?: undefined; rule?: boolean; regions?: string[]; labels?: string[]; note: string }
+  )
 
 export type PronounRowConfig = {
   id: string
   label: string
-  self: PronounPick[]
-  addressee: PronounPick[]
+  /** The row to use when the relationship isn't known. At most one row. */
+  default?: boolean
   warning?: string
-}
+} & Partial<Record<'self' | 'addressee' | 'third' | 'selfPlural' | 'addresseePlural' | 'thirdPlural', PronounPick[]>>

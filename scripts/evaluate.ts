@@ -51,6 +51,12 @@ export const CASES: Case[] = [
   c(pair('en', undefined, 'vi', undefined), 'I', ['tôi', 'mình']),
   c(enViS, 'I', ['tui']),
   c(pair('en', undefined, 'vi', undefined), 'I', ['tớ', 'tao', 'ta', 'tui'], { register: 'casual' }),
+  // Other persons, from the pronoun table's default row (anh ấy/chị ấy are Northern-tagged; ảnh/chỉ Southern).
+  c(pair('en', undefined, 'vi', undefined), 'you', ['bạn']),
+  c(pair('en', undefined, 'vi', undefined), 'he', ['anh ấy']),
+  c(enViS, 'she', ['chỉ', 'chị ấy']),
+  c(pair('en', undefined, 'vi', undefined), 'we', ['chúng tôi', 'chúng ta']),
+  c(pair('en', undefined, 'vi', undefined), 'they', ['họ']),
   // English -> Spanish
   c(enEsSpain, 'car', ['coche']),
   c(enEsMexico, 'car', ['carro', 'auto']),

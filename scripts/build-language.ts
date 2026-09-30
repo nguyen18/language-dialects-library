@@ -13,6 +13,7 @@ import { dirname, join } from 'node:path'
 import { createInterface } from 'node:readline'
 import { fileURLToPath } from 'node:url'
 import {
+  PRONOUN_PERSONS,
   glossTerms,
   shardKey,
   toStored,
@@ -325,14 +326,17 @@ async function main() {
 
   if (config.pronouns) {
     const { rows, report } = buildPronounTable(entries, config.pronouns, config.regions)
-    const stored: StoredPronounRow[] = rows.map((r) => ({
-      ...r,
-      self: r.self.map((c) => toStored(c)),
-      addressee: r.addressee.map((c) => toStored(c)),
-    }))
+    const stored: StoredPronounRow[] = rows.map((r) => {
+      const row: StoredPronounRow = { id: r.id, label: r.label, ...(r.default ? { default: true } : {}), ...(r.warning ? { warning: r.warning } : {}) }
+      for (const person of PRONOUN_PERSONS) if (r[person].length) row[person] = r[person].map((c) => toStored(c))
+      return row
+    })
     await writeFile(join(outDir, 'pronouns.json'), JSON.stringify(stored))
-    console.log(`Pronoun table: ${rows.length} rows, ${report.fromGlosses} words from definitions, ${report.overrides} overrides`)
-    for (const u of report.unmatched) console.warn(`  WARNING: no definition matches ${u}`)
+    console.log(
+      `Pronoun table: ${rows.length} rows, ${report.fromGlosses} words from definitions, ` +
+        `${report.rules} from grammar rules, ${report.overrides} overrides`,
+    )
+    for (const p of report.problems) console.warn(`  WARNING: ${p}`)
   }
 
   const senses = entries.flatMap((e) => e.senses)

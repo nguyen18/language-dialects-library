@@ -13,7 +13,9 @@ import {
   type Example,
   type Hit,
   type LanguageMeta,
+  PRONOUN_PERSONS,
   type PronounChoice,
+  type PronounPerson,
   type PronounRow,
   type Sense,
   type TableTranslation,
@@ -54,7 +56,8 @@ export type Translation = Hit & {
   score: number
   /**
    * How this word was found: the English term that linked it, "synonym" for a same-language synonym,
-   * "table" for Wiktionary's translation table, or "pronouns" for the `listener`'s pronoun-table row.
+   * "table" for Wiktionary's translation table, or "pronouns" for a pronoun-table row's words (the
+   * `listener`'s or `about`'s row, or the default row).
    */
   bridge: string
   /** Example sentences for this word in the matched sense, when the dictionary has them. */
@@ -64,27 +67,30 @@ export type Translation = Hit & {
 }
 
 /**
- * A relationship the source word is used in as "I" or "you", from the source language's pronoun table
- * (Vietnamese "em": I, talking to someone a bit older; you, talking to someone younger).
+ * A relationship the source word is used in as "I", "you", "he/she", "we", plural "you" or "they", from the
+ * source language's pronoun table (Vietnamese "em": I, talking to someone a bit older; you, talking to
+ * someone younger).
  */
 export type PronounUse = {
   /** Row id, e.g. "older-male". */
   id: string
-  /** Who you're talking to, e.g. "Someone a bit older (man)". */
+  /** Who you're talking to (or about), e.g. "Someone a bit older (man)". */
   label: string
-  /** 'self' when the word means "I" there, 'addressee' when it means "you". */
-  person: 'self' | 'addressee'
+  /** The table column: 'self' ("I"), 'addressee' ("you"), 'third' ("he/she"), or their plurals. */
+  person: PronounPerson
   /** Only said by a male or female speaker. */
   speaker?: 'male' | 'female'
+  /** The gender of the person the word refers to, when it has one. */
+  gender?: 'male' | 'female'
   regions: string[]
   regionTagged: boolean
   note?: string
   warning?: string
 }
 
-/** The words for "I" (or "you") in one relationship, from the target language's pronoun table. */
+/** The words for one person ("I", "you", "he"…) in one relationship, from the target's pronoun table. */
 export type RelationshipWords = {
-  /** Row id, usable as `listener`. */
+  /** Row id, usable as `listener` (I/you/we) or `about` (he/she/they). */
   id: string
   /** Who you're talking to, e.g. "Your parents". */
   label: string
@@ -99,14 +105,15 @@ export type TranslationGroup = {
   /** Best first. */
   translations: Translation[]
   /**
-   * For "I" and "you" senses, when the target language has a pronoun table (Vietnamese): the word to
-   * use for each relationship, filtered by `toRegion`, `speaker` and `exclude`. Pass one's `id` as
-   * `listener` to put its words first.
+   * For personal-pronoun senses ("I", "you", "he/she", "we", "they"), when the target language has a
+   * pronoun table (Vietnamese): the word to use for each relationship, filtered by `toRegion`, `speaker`,
+   * `exclude`, and the pronoun's gender (he/she) or inclusiveness (we). Pass one's `id` as `listener`
+   * (I/you/we) or `about` (he/she/they) to put its words first.
    */
   relationships?: RelationshipWords[]
   /**
    * When the source word is in the source language's pronoun table: the relationships it's used in with
-   * this meaning. Uses no definition covers get a group of their own, translated as "I" or "you"
+   * this meaning. Uses no definition covers get a group of their own, translated as "I", "you", "he"…
    * (Vietnamese "em" is only defined as "younger sibling" and "refers to any person described by em").
    */
   pronounUses?: PronounUse[]
@@ -131,11 +138,14 @@ export type TranslateOptions = {
    */
   register?: 'casual' | 'neutral' | 'polite'
   /**
-   * Who you're talking to, as an pronoun-table row id of the target language (e.g. Vietnamese "parent",
-   * "older-male", "friend"; see Dictionary.pronouns). For "I" and "you" senses, that relationship's words
-   * come first. Ignored for targets without a pronoun table; unknown ids throw, listing the valid ones.
+   * Who you're talking to, as a pronoun-table row id of the target language (e.g. Vietnamese "parent",
+   * "older-male", "friend"; see Dictionary.pronouns). For "I", "you", "we" and plural "you", that
+   * relationship's words come first. Without it, the table's default row's words do (Vietnamese "tôi",
+   * "bạn"). Ignored for targets without a pronoun table; unknown ids throw, listing the valid ones.
    */
   listener?: string
+  /** Who you're talking about, as a row id like `listener`: for "he", "she", "him", "her", "they", "them". */
+  about?: string
   /** The speaker's gender, for pronoun-table words that depend on it ("anh" vs "chị" toward someone younger). */
   speaker?: 'male' | 'female'
   /** Labels to leave out of translations (default DEFAULT_EXCLUDED_LABELS). */
@@ -218,19 +228,56 @@ const TABLE_BONUS = 4
 const TABLE_REGION_BONUS = 1.5
 const TABLE_OTHER_REGION_PENALTY = 2
 
-// Singular "I" and "you" senses, from their definitions (English "The speaker or writer…", "The person
-// spoken to…"; Vietnamese "I/me, your …", "you, my …"). Plural ones ("The people spoken to") aren't in
-// the pronoun table.
-const FIRST_PERSON = /^(?:I|me)\b|\bthe speaker\b|\bfirst[- ]person singular\b/i
-const SECOND_PERSON = /^you\b|\b(?:spoken|written) to\b|\bperson (?:being )?addressed\b|\bsecond[- ]person singular\b/i
-const PLURAL_PERSON = /\bpeople\b|\bplural\b|^(?:we|us)\b|\byou all\b/i
-function personOf(sense: SourceSense): 'self' | 'addressee' | null {
+// Which pronoun-table column a personal-pronoun sense is. English pronouns are known by the word
+// (English "him" is defined by grammar: "With dative effect or as an indirect object"); other languages'
+// by their definitions ("I/me, your …", "you, my …", "he; him", "we/us (exclusive)", "they/them").
+type Person = { person: PronounPerson; gender?: 'male' | 'female'; inclusive?: boolean }
+const ENGLISH_PERSONS: Record<string, Person> = {
+  i: { person: 'self' }, me: { person: 'self' },
+  you: { person: 'addressee' },
+  he: { person: 'third', gender: 'male' }, him: { person: 'third', gender: 'male' },
+  she: { person: 'third', gender: 'female' }, her: { person: 'third', gender: 'female' },
+  we: { person: 'selfPlural' }, us: { person: 'selfPlural' },
+  they: { person: 'thirdPlural' }, them: { person: 'thirdPlural' },
+  "y'all": { person: 'addresseePlural' }, 'you guys': { person: 'addresseePlural' }, yous: { person: 'addresseePlural' },
+}
+// English senses that aren't about people: "It; an animal whose gender is unknown", "A ship or boat",
+// generic "you" ("Anyone, one").
+const NOT_A_PERSON = /^(?:it\b|a genderless|a ship|a country|a thing|anyone\b|a dummy)/i
+const INCLUSIVE = /\binclusive\b|\bincluding the (?:person|listener)/i
+const EXCLUSIVE = /\bexclusive\b|\bexcluding the (?:person|listener)/i
+function personOf(sense: SourceSense, from: string): Person | null {
   if (sense.pos !== 'pron') return null
   const gloss = displayGloss(sense.glosses)
-  if (PLURAL_PERSON.test(gloss)) return null
-  if (FIRST_PERSON.test(gloss)) return 'self'
-  if (SECOND_PERSON.test(gloss)) return 'addressee'
+  const clusivity = INCLUSIVE.test(gloss) ? { inclusive: true } : EXCLUSIVE.test(gloss) ? { inclusive: false } : {}
+  if (from === 'en') {
+    const known = ENGLISH_PERSONS[sense.lemma.toLowerCase()]
+    if (!known || NOT_A_PERSON.test(gloss)) return null
+    if (known.person === 'addressee' && /\bpeople\b|yourselves|\bplural\b/i.test(gloss)) return { person: 'addresseePlural' }
+    // Singular "they": "One whose gender is unknown…".
+    if (known.person === 'thirdPlural' && /^one\b/i.test(gloss)) return { person: 'third' }
+    return { ...known, ...(known.person === 'selfPlural' ? clusivity : {}) }
+  }
+  if (/^(?:we|us)\b/i.test(gloss)) return { person: 'selfPlural', ...clusivity }
+  if (/^you\b.*\b(?:plural|guys|y'all)\b/i.test(gloss)) return { person: 'addresseePlural' }
+  if (/^(?:they|them)\b/i.test(gloss)) return { person: 'thirdPlural' }
+  if (/^(?:I|me)\b|\bfirst[- ]person singular\b/i.test(gloss)) return { person: 'self' }
+  if (/^you\b|\bsecond[- ]person singular\b/i.test(gloss)) return { person: 'addressee' }
+  if (/^(?:he|him)\b/i.test(gloss)) return { person: 'third', ...(/\b(?:she|her)\b/i.test(gloss) ? {} : { gender: 'male' as const }) }
+  if (/^(?:she|her)\b/i.test(gloss)) return { person: 'third', ...(/\b(?:he|him)\b/i.test(gloss) ? {} : { gender: 'female' as const }) }
   return null
+}
+// A pronoun sense whose definition names a relationship ("I/me, your father", "used by children when
+// talking to their parents") isn't a plain "I": the default row's neutral words don't apply to it.
+const RELATIONAL = /\b(?:your|my)\b|\bused (?:by|when|to)\b|\btalking to\b|\btowards?\b/i
+
+// Which option picks the row: who you're talking to, or who you're talking about.
+const ABOUT_PERSONS = new Set<PronounPerson>(['third', 'thirdPlural'])
+const SINGULAR_PERSONS = new Set<PronounPerson>(['self', 'addressee', 'third'])
+
+// A row's words for a pronoun sense: its gender (he/she) and inclusiveness (we) filter them.
+function fits(c: PronounChoice, p: Person): boolean {
+  return (!p.gender || !c.gender || c.gender === p.gender) && (p.inclusive === undefined || c.inclusive === undefined || c.inclusive === p.inclusive)
 }
 
 // Matches scoring below this are dropped. A real match gets at least ~2 (a main-meaning or first-term match).
@@ -568,19 +615,19 @@ export function createTranslator(options: TranslatorOptions = {}): Translator {
   }
 
   // The source word's uses in a pronoun table, with the definition each came from.
-  function pronounUses(rows: PronounRow[], word: string): { gloss?: string; person: 'self' | 'addressee'; use: PronounUse }[] {
+  function pronounUses(rows: PronounRow[], word: string): { gloss?: string; use: PronounUse }[] {
     const w = word.trim()
-    const out: { gloss?: string; person: 'self' | 'addressee'; use: PronounUse }[] = []
+    const out: { gloss?: string; use: PronounUse }[] = []
     for (const r of rows) {
-      for (const person of ['self', 'addressee'] as const) {
+      for (const person of PRONOUN_PERSONS) {
         for (const c of r[person]) {
           if (c.word !== w && c.word !== w.toLowerCase()) continue
           out.push({
             gloss: c.gloss,
-            person,
             use: {
               id: r.id, label: r.label, person, regions: c.regions, regionTagged: c.regionTagged,
-              ...(c.speaker ? { speaker: c.speaker } : {}), ...(c.note ? { note: c.note } : {}), ...(r.warning ? { warning: r.warning } : {}),
+              ...(c.speaker ? { speaker: c.speaker } : {}), ...(c.gender ? { gender: c.gender } : {}),
+              ...(c.note ? { note: c.note } : {}), ...(r.warning ? { warning: r.warning } : {}),
             },
           })
         }
@@ -589,24 +636,36 @@ export function createTranslator(options: TranslatorOptions = {}): Translator {
     return out
   }
 
-  // The target's words for "I" or "you": English "I"/"me" or "you" themselves, else English "I"/"you"
-  // translated (with the caller's listener, so Vietnamese gets the right relationship word).
+  // English words for a pronoun-table column (he/him or she/her by gender).
+  function englishWords(person: PronounPerson, gender?: 'male' | 'female'): string[] {
+    switch (person) {
+      case 'self': return ['I', 'me']
+      case 'addressee': case 'addresseePlural': return ['you']
+      case 'third': return gender === 'male' ? ['he', 'him'] : gender === 'female' ? ['she', 'her'] : ['he', 'she']
+      case 'selfPlural': return ['we', 'us']
+      case 'thirdPlural': return ['they', 'them']
+    }
+  }
+
+  // The target's words for a pronoun: the English words themselves, else the English word translated
+  // (with the caller's listener/about, so Vietnamese gets the right relationship word).
   async function pronounTranslations(
-    person: 'self' | 'addressee',
-    o: { to: string; toMeta: LanguageMeta; toRegion?: string; register?: TranslateOptions['register']; listener?: string; speaker?: 'male' | 'female'; exclude: string[]; limit: number },
+    person: PronounPerson,
+    gender: 'male' | 'female' | undefined,
+    o: { to: string; toMeta: LanguageMeta; toRegion?: string; register?: TranslateOptions['register']; listener?: string; about?: string; speaker?: 'male' | 'female'; exclude: string[]; limit: number },
   ): Promise<Translation[]> {
+    const words = englishWords(person, gender)
     if (o.to === 'en') {
-      const words = person === 'self' ? ['I', 'me'] : ['you']
       const hits = (await Promise.all(words.map((w) => englishCandidates(w.toLowerCase(), ['pron'], o.toMeta, o.toRegion, o.exclude)))).flat()
       const seen = new Set<string>()
       return hits
         .filter((h) => h.pos === 'pron' && !seen.has(h.word) && seen.add(h.word))
         .map((h, i) => ({ ...h, score: 10 - i, bridge: 'pronouns' }))
     }
-    const groups = await api.translate(person === 'self' ? 'I' : 'you', {
-      from: 'en', to: o.to, toRegion: o.toRegion, register: o.register, listener: o.listener, speaker: o.speaker, exclude: o.exclude, limit: o.limit,
+    const groups = await api.translate(words[0], {
+      from: 'en', to: o.to, toRegion: o.toRegion, register: o.register, listener: o.listener, about: o.about, speaker: o.speaker, exclude: o.exclude, limit: o.limit,
     })
-    const found = (groups.find((g) => personOf(g.source) === person) ?? groups[0])?.translations ?? []
+    const found = (groups.find((g) => personOf(g.source, 'en')?.person === person) ?? groups[0])?.translations ?? []
     // Pronouns only, when there are any (English "I" into Spanish also finds the letter, "i latina").
     const pronouns = found.filter((t) => t.pos === 'pron')
     return pronouns.length ? pronouns : found
@@ -615,14 +674,15 @@ export function createTranslator(options: TranslatorOptions = {}): Translator {
   const api: Translator = {
     senses,
 
-    async translate(word, { from, to, fromRegion, toRegion, pos, meaning, register: wantedRegister, listener, speaker, exclude = DEFAULT_EXCLUDED_LABELS, limit = 5, allSenses = false }) {
+    async translate(word, { from, to, fromRegion, toRegion, pos, meaning, register: wantedRegister, listener, about, speaker, exclude = DEFAULT_EXCLUDED_LABELS, limit = 5, allSenses = false }) {
       const [sourceSenses, toMeta, fromMeta] = await Promise.all([senses(word, { from, fromRegion, pos }), dict(to).meta(), dict(from).meta()])
-      // The target's pronoun table, for "I"/"you" senses (throws for an unknown listener).
+      // The target's pronoun table, for personal-pronoun senses (throws for an unknown listener/about).
       const pronounRows: PronounRow[] =
-        toMeta.pronouns && sourceSenses.some((s) => personOf(s))
+        toMeta.pronouns && sourceSenses.some((s) => personOf(s, from))
           ? await dict(to).pronouns({ region: toRegion, speaker, exclude })
           : []
       if (listener && toMeta.pronouns) await dict(to).pronouns({ listener })
+      if (about && toMeta.pronouns) await dict(to).pronouns({ listener: about })
       const toWanted = resolveRegion(toMeta, toRegion)
       const hasFrequencies = Boolean(toMeta.frequencySource)
       const meaningWords = meaning ? contentWords(meaning) : null
@@ -743,25 +803,34 @@ export function createTranslator(options: TranslatorOptions = {}): Translator {
           }
         }
 
-        // "I"/"you": the listener's relationship words go first, in the table's order.
-        const person = personOf(sense)
-        const row = person && listener ? pronounRows.find((r) => r.id === listener) : undefined
+        // Personal pronouns: the chosen row's words go first (the `listener`'s for I/you/we, the `about`'s
+        // for he/she/they, else the default row's), fitted to the pronoun's gender (he/she) and
+        // inclusiveness (we). Words tagged for the target region, then those fitting the register, lead.
+        const person = personOf(sense, from)
+        const rowId = person ? (ABOUT_PERSONS.has(person.person) ? about : listener) : undefined
+        const plain = !RELATIONAL.test(displayGloss(sense.glosses))
+        const row = person ? (rowId ? pronounRows.find((r) => r.id === rowId) : plain ? pronounRows.find((r) => r.default) : undefined) : undefined
         if (person && row) {
+          const words = row[person.person]
+            .filter((c) => fits(c, person))
+            .map((c, i) => ({ c, i, region: toWanted && c.regionTagged && intersects(c.regions, toWanted) ? 1 : 0, fit: registerFit(sense.labels, c.labels, wantedRegister) }))
+            .sort((a, b) => b.region - a.region || b.fit - a.fit || a.i - b.i)
+            .map((x) => x.c)
           const top = Math.max(0, ...[...scored.values()].map((t) => t.score))
-          row[person].forEach((c, i) => {
+          words.forEach((c, i) => {
             const found = scored.get(c.word)
             scored.set(c.word, {
               word: c.word, pos: found?.pos ?? 'pron', gloss: c.gloss ?? c.note ?? row.label,
               regions: c.regions, regionTagged: c.regionTagged, labels: c.labels,
               senseIndex: found?.senseIndex ?? 0, senses: found?.senses ?? 1, primary: true,
               ...(found?.frequency !== undefined ? { frequency: found.frequency } : {}),
-              score: top + 1 + (row[person].length - i) * 0.1, bridge: 'pronouns', relationship: row.label,
+              score: top + 1 + (words.length - i) * 0.1, bridge: 'pronouns', relationship: row.label,
             })
           })
         }
         const relationships = person
           ? pronounRows
-              .map((r) => ({ id: r.id, label: r.label, words: r[person], ...(r.warning ? { warning: r.warning } : {}) }))
+              .map((r) => ({ id: r.id, label: r.label, words: r[person.person].filter((c) => fits(c, person)), ...(r.warning ? { warning: r.warning } : {}) }))
               .filter((r) => r.words.length)
           : []
 
@@ -783,25 +852,28 @@ export function createTranslator(options: TranslatorOptions = {}): Translator {
 
       // The source word's uses in its own language's pronoun table ("em": I to someone older, you to
       // someone younger). A use goes to the group of the definition it came from; the rest get a group
-      // per person, translated as the target's "I" or "you".
+      // per person, translated as the target's "I", "you", "he"….
       const uses = fromMeta.pronouns && (!pos || pos === 'pron') ? pronounUses(await dict(from).pronouns({ region: fromRegion, speaker, exclude }), word) : []
-      for (const person of ['self', 'addressee'] as const) {
+      for (const person of PRONOUN_PERSONS) {
         const leftover: PronounUse[] = []
-        for (const u of uses.filter((x) => x.person === person)) {
-          const home = groups.filter((g) => u.gloss && personOf(g.source) === person && g.source.glosses.includes(u.gloss))
-          for (const g of home) g.pronounUses = [...(g.pronounUses ?? []), u.use]
-          if (!home.length) leftover.push(u.use)
+        for (const { gloss, use } of uses.filter((x) => x.use.person === person)) {
+          const home = groups.filter((g) => gloss && personOf(g.source, from)?.person === person && g.source.glosses.includes(gloss))
+          for (const g of home) g.pronounUses = [...(g.pronounUses ?? []), use]
+          if (!home.length) leftover.push(use)
         }
         if (!leftover.length) continue
+        const genders = new Set(leftover.map((u) => u.gender))
+        const gender = genders.size === 1 ? leftover[0].gender : undefined
         const tagged = leftover.every((u) => u.regionTagged)
+        const who = leftover.map((u) => u.label.charAt(0).toLowerCase() + u.label.slice(1) + (u.speaker ? ` (said by a ${u.speaker === 'male' ? 'man' : 'woman'})` : ''))
         const source: SourceSense = {
           word, lemma: word.trim(), pos: 'pron',
-          glosses: [`${person === 'self' ? 'I/me' : 'you'}, when talking to: ${leftover.map((u) => u.label.charAt(0).toLowerCase() + u.label.slice(1) + (u.speaker ? ` (said by a ${u.speaker === 'male' ? 'man' : 'woman'})` : '')).join('; ')}`],
+          glosses: [`${englishWords(person, gender).join('/')}${person === 'addresseePlural' ? ' (plural)' : ''}, when talking ${ABOUT_PERSONS.has(person) ? 'about' : 'to'}: ${who.join('; ')}`],
           regions: tagged ? [...new Set(leftover.flatMap((u) => u.regions))] : fromMeta.regions,
           regionTagged: tagged,
           labels: [],
         }
-        const translations = await pronounTranslations(person, { to, toMeta, toRegion, register: wantedRegister, listener, speaker, exclude, limit })
+        const translations = await pronounTranslations(person, gender, { to, toMeta, toRegion, register: wantedRegister, listener, about, speaker, exclude, limit })
         groups.push({ source, bridge: [], translations, pronounUses: leftover })
       }
 
@@ -814,14 +886,25 @@ export function createTranslator(options: TranslatorOptions = {}): Translator {
       // `meaning` is matched against the sense's own definitions, and also against its top translation's
       // definition: English words the source definition doesn't use can still describe the target word
       // ("cool": "Fashionable; trendy; hip" never says "awesome", but its translation "guay" is "cool, great").
+      // Personal pronouns into a language with a pronoun table: a listener/about says the caller means
+      // that person. A word with both singular and plural person senses ("you": Wiktionary lists the
+      // plural first) puts the plural ones after the others. Singular ones aren't raised: "bố" is
+      // "father" first, "I/me, your father" after.
+      const personGroups = groups.map((g) => (g.relationships ? personOf(g.source, from) : null))
+      const hasSingular = personGroups.some((p) => p && SINGULAR_PERSONS.has(p.person))
+      const pronounRelevance = (g: TranslationGroup) => {
+        const p = personGroups[groups.indexOf(g)]
+        if (!p) return 0
+        const chosen = ABOUT_PERSONS.has(p.person) ? about : listener
+        return (chosen ? 10 : 0) - (hasSingular && !SINGULAR_PERSONS.has(p.person) ? 3 : 0)
+      }
       const relevance = (g: TranslationGroup) =>
         (meaningWords
           ? 10 * overlap(meaningWords, g.source.glosses.join(' ')) + 5 * overlap(meaningWords, g.translations[0]?.gloss ?? '')
           : 0) -
         (ownSenses && g.source.via && SPELLING_VIA.test(g.source.via) ? 2 : 0) +
         (fromRegion && g.source.regionTagged ? 3 : 0) +
-        // A listener says the caller means singular "I"/"you" (Wiktionary lists plural "you" first).
-        (listener && g.relationships ? 20 : 0) -
+        pronounRelevance(g) -
         (g.source.labels.length && g.source.labels.every((l) => MARGINAL_LABELS.has(l)) ? 1 : 0)
       const ordered = groups
         .map((g, i) => ({ g, i, r: relevance(g) }))
