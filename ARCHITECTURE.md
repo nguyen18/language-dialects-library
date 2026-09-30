@@ -1,6 +1,6 @@
 # which-dialect — Architecture & Context
 
-Reference for future sessions/agents. Read this before changing the repo. The user-facing overview is `README.md`.
+Reference for future sessions/agents. Read this before changing the repo. The user-facing overview is `README.md`; known problems deliberately left for later are in `FUTURE_IMPROVEMENTS.md` (add to it rather than fixing unasked).
 
 ## What this is and why
 
@@ -91,6 +91,8 @@ Spanish (`languages/es.ts`): regions are 23 **countries** (Spain, Mexico, the Ce
 **Examples** (added 2026-09-27): `Sense.examples` (`{ text, translation? }`), up to `maxExamples` (2; English 1) per sense, ≤ 160 characters, everyday "example" type before quotations and translated ones first. ~18% of Vietnamese senses have one. Translations get `examples` from their matched sense (looked up for the final `limit` hits only). English `maxSensesPerEntry` raised 6 → 14 (common words list everyday informal senses late: *cool* "fashionable" is sense 9 of 13), then removed entirely at the owner's request; together +4.4 MB. English data is now 130.7 MB (npm tarball 33 MB) (jsDelivr's npm package limit is ~150 MB, so watch it). Region bonus is +2 only when the hit is `primary`, else +0.5 (*bá cháy* is Southern for "awesome", so it shouldn't win *cool* "low temperature").
 
 **Synonyms** (added to the data 2026-09-27): `Sense.synonyms` from Kaikki sense-level `synonyms` (entry-level ones without a sense go to the first sense), max 8. They're Wiktionary's dialect equivalents (vi *ngô* → *bắp*, *lợn* → *heo*; es *coche* → *carro*, *zumo* → *jugo*; en *lift* ↔ *elevator*). ~10% of Vietnamese senses have them. Sizes after: vi 12.5 MB, es 39.5 MB, en 104.3 MB (en also has the regional index: `englishIndex: 'regional'`, 26,909 terms).
+
+**Subpage titles (2026-09-30):** Wiktionary splits very long pages into subpages and Kaikki uses the subpage title as the word ("i/languages M to Z" for the letter *i*, in vi and es). `readEntries` strips `SUBPAGE` (`/languages X to Y`). Only that one word was affected in vi; none in en.
 
 **Noise fixes (2026-09-27, found generating Language Helper's Cheatsheet):** `glossTerms` drops "etc" (it matched every gloss containing "etc": *there* → nhiệt); senses reached through a spelling variant of a different word (`SPELLING_VIA`: pronunciation spelling, misspelling, …) rank −2 when the word has its own senses (*yeah* ≠ "year"); English bridge terms add the regular base form after the lemma (*thanks* → *thank*); English synonyms are bridge terms only if plain English and score −1 (*thanks* ↛ "cheers" → *dzô*); translations below `MIN_SCORE` (1) are dropped as noise.
 
