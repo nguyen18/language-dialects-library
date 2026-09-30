@@ -29,7 +29,7 @@ const config: LanguageConfig = {
   // How to say "I" and "you" depending on who you're talking to. Each pick with a `gloss` is a pronoun
   // definition from the data ("you, my father"); the few without one are overrides for what Wiktionary's
   // definitions don't say, each with a note.
-  address: [
+  pronouns: [
     {
       id: 'friend',
       label: 'A friend your age',

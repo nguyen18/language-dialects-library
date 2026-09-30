@@ -47,7 +47,7 @@ export const CASES: Case[] = [
   c(enViS, 'father', ['ba', 'tía']),
   c(enViN, 'father', ['bố']),
   // "I" without a relationship: the general pronouns, not kinship words (con, anh, ông), which need
-  // the address table's listener. From Wiktionary's table for "I" (tôi, tớ, ta, tui (South), tao, mình).
+  // the pronoun table's listener. From Wiktionary's table for "I" (tôi, tớ, ta, tui (South), tao, mình).
   c(pair('en', undefined, 'vi', undefined), 'I', ['tôi', 'mình']),
   c(enViS, 'I', ['tui']),
   c(pair('en', undefined, 'vi', undefined), 'I', ['tớ', 'tao', 'ta', 'tui'], { register: 'casual' }),

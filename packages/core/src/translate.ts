@@ -6,7 +6,18 @@
 // on its own, so a word's meanings don't get mixed up ("cool" the temperature vs. "cool" the compliment).
 
 import { compatiblePos } from './pos.ts'
-import { glossTerms, normalizeEnglish, type Example, type Hit, type LanguageMeta, type Sense, type TableTranslation } from './types.ts'
+import {
+  displayGloss,
+  glossTerms,
+  normalizeEnglish,
+  type PronounChoice,
+  type PronounRow,
+  type Example,
+  type Hit,
+  type LanguageMeta,
+  type Sense,
+  type TableTranslation,
+} from './types.ts'
 import {
   createDictionary,
   DEFAULT_EXCLUDED_LABELS,
@@ -41,10 +52,25 @@ export type SourceSense = {
 export type Translation = Hit & {
   /** Higher is better. Comparable within one group. */
   score: number
-  /** How this word was found: the English term that linked it, or "synonym" for a same-language synonym. */
+  /**
+   * How this word was found: the English term that linked it, "synonym" for a same-language synonym,
+   * "table" for Wiktionary's translation table, or "pronouns" for the `listener`'s pronoun-table row.
+   */
   bridge: string
   /** Example sentences for this word in the matched sense, when the dictionary has them. */
   examples?: Example[]
+  /** For pronoun-table words: the relationship it's for, e.g. "Your parents". */
+  relationship?: string
+}
+
+/** The words for "I" (or "you") in one relationship, from the target language's pronoun table. */
+export type RelationshipWords = {
+  /** Row id, usable as `listener`. */
+  id: string
+  /** Who you're talking to, e.g. "Your parents". */
+  label: string
+  words: PronounChoice[]
+  warning?: string
 }
 
 export type TranslationGroup = {
@@ -53,6 +79,12 @@ export type TranslationGroup = {
   bridge: string[]
   /** Best first. */
   translations: Translation[]
+  /**
+   * For "I" and "you" senses, when the target language has a pronoun table (Vietnamese): the word to
+   * use for each relationship, filtered by `toRegion`, `speaker` and `exclude`. Pass one's `id` as
+   * `listener` to put its words first.
+   */
+  relationships?: RelationshipWords[]
 }
 
 export type TranslateOptions = {
@@ -73,6 +105,14 @@ export type TranslateOptions = {
    * colloquial words (Southern "tui" for "I"), 'polite' polite/formal ones, 'neutral' plain ones.
    */
   register?: 'casual' | 'neutral' | 'polite'
+  /**
+   * Who you're talking to, as an pronoun-table row id of the target language (e.g. Vietnamese "parent",
+   * "older-male", "friend"; see Dictionary.pronouns). For "I" and "you" senses, that relationship's words
+   * come first. Ignored for targets without a pronoun table; unknown ids throw, listing the valid ones.
+   */
+  listener?: string
+  /** The speaker's gender, for pronoun-table words that depend on it ("anh" vs "chị" toward someone younger). */
+  speaker?: 'male' | 'female'
   /** Labels to leave out of translations (default DEFAULT_EXCLUDED_LABELS). */
   exclude?: string[]
   /** Maximum translations per source sense (default 5). */
@@ -152,6 +192,21 @@ function commonness(hit: { frequency?: number; senses: number }, hasFrequencies:
 const TABLE_BONUS = 4
 const TABLE_REGION_BONUS = 1.5
 const TABLE_OTHER_REGION_PENALTY = 2
+
+// Singular "I" and "you" senses, from their definitions (English "The speaker or writer…", "The person
+// spoken to…"; Vietnamese "I/me, your …", "you, my …"). Plural ones ("The people spoken to") aren't in
+// the pronoun table.
+const FIRST_PERSON = /^(?:I|me)\b|\bthe speaker\b|\bfirst[- ]person singular\b/i
+const SECOND_PERSON = /^you\b|\b(?:spoken|written) to\b|\bperson (?:being )?addressed\b|\bsecond[- ]person singular\b/i
+const PLURAL_PERSON = /\bpeople\b|\bplural\b|^(?:we|us)\b|\byou all\b/i
+function personOf(sense: SourceSense): 'self' | 'addressee' | null {
+  if (sense.pos !== 'pron') return null
+  const gloss = displayGloss(sense.glosses)
+  if (PLURAL_PERSON.test(gloss)) return null
+  if (FIRST_PERSON.test(gloss)) return 'self'
+  if (SECOND_PERSON.test(gloss)) return 'addressee'
+  return null
+}
 
 // Matches scoring below this are dropped. A real match gets at least ~2 (a main-meaning or first-term match).
 const MIN_SCORE = 1
@@ -486,8 +541,14 @@ export function createTranslator(options: TranslatorOptions = {}): Translator {
   return {
     senses,
 
-    async translate(word, { from, to, fromRegion, toRegion, pos, meaning, register: wantedRegister, exclude = DEFAULT_EXCLUDED_LABELS, limit = 5, allSenses = false }) {
+    async translate(word, { from, to, fromRegion, toRegion, pos, meaning, register: wantedRegister, listener, speaker, exclude = DEFAULT_EXCLUDED_LABELS, limit = 5, allSenses = false }) {
       const [sourceSenses, toMeta] = await Promise.all([senses(word, { from, fromRegion, pos }), dict(to).meta()])
+      // The target's pronoun table, for "I"/"you" senses (throws for an unknown listener).
+      const pronounRows: PronounRow[] =
+        toMeta.pronouns && sourceSenses.some((s) => personOf(s))
+          ? await dict(to).pronouns({ region: toRegion, speaker, exclude })
+          : []
+      if (listener && toMeta.pronouns) await dict(to).pronouns({ listener })
       const toWanted = resolveRegion(toMeta, toRegion)
       const hasFrequencies = Boolean(toMeta.frequencySource)
       const meaningWords = meaning ? contentWords(meaning) : null
@@ -608,6 +669,28 @@ export function createTranslator(options: TranslatorOptions = {}): Translator {
           }
         }
 
+        // "I"/"you": the listener's relationship words go first, in the table's order.
+        const person = personOf(sense)
+        const row = person && listener ? pronounRows.find((r) => r.id === listener) : undefined
+        if (person && row) {
+          const top = Math.max(0, ...[...scored.values()].map((t) => t.score))
+          row[person].forEach((c, i) => {
+            const found = scored.get(c.word)
+            scored.set(c.word, {
+              word: c.word, pos: found?.pos ?? 'pron', gloss: c.gloss ?? c.note ?? row.label,
+              regions: c.regions, regionTagged: c.regionTagged, labels: c.labels,
+              senseIndex: found?.senseIndex ?? 0, senses: found?.senses ?? 1, primary: true,
+              ...(found?.frequency !== undefined ? { frequency: found.frequency } : {}),
+              score: top + 1 + (row[person].length - i) * 0.1, bridge: 'pronouns', relationship: row.label,
+            })
+          })
+        }
+        const relationships = person
+          ? pronounRows
+              .map((r) => ({ id: r.id, label: r.label, words: r[person], ...(r.warning ? { warning: r.warning } : {}) }))
+              .filter((r) => r.words.length)
+          : []
+
         // Below this score a match is noise (an unrelated word that happened to share a term).
         const translations = [...scored.values()]
           .filter((t) => t.score >= MIN_SCORE)
@@ -619,7 +702,9 @@ export function createTranslator(options: TranslatorOptions = {}): Translator {
           const examples = entry?.senses[t.senseIndex]?.examples
           if (examples) t.examples = examples
         }
-        if (translations.length || allSenses) groups.push({ source: sense, bridge, translations })
+        if (translations.length || allSenses) {
+          groups.push({ source: sense, bridge, translations, ...(relationships.length ? { relationships } : {}) })
+        }
       }
 
       // Most relevant sense first: one matching `meaning`; then one tagged for the source region (the
@@ -636,7 +721,9 @@ export function createTranslator(options: TranslatorOptions = {}): Translator {
           ? 10 * overlap(meaningWords, g.source.glosses.join(' ')) + 5 * overlap(meaningWords, g.translations[0]?.gloss ?? '')
           : 0) -
         (ownSenses && g.source.via && SPELLING_VIA.test(g.source.via) ? 2 : 0) +
-        (fromRegion && g.source.regionTagged ? 3 : 0) -
+        (fromRegion && g.source.regionTagged ? 3 : 0) +
+        // A listener says the caller means singular "I"/"you" (Wiktionary lists plural "you" first).
+        (listener && g.relationships ? 20 : 0) -
         (g.source.labels.length && g.source.labels.every((l) => MARGINAL_LABELS.has(l)) ? 1 : 0)
       const ordered = groups
         .map((g, i) => ({ g, i, r: relevance(g) }))

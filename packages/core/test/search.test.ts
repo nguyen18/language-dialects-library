@@ -13,7 +13,7 @@ import {
   regularBaseForms,
   shardKey,
   type LanguageMeta,
-  type StoredAddressRow,
+  type StoredPronounRow,
   type StoredHit,
 } from '../src/index.ts'
 
@@ -106,10 +106,10 @@ describe('searchEnglish ranking (fake data)', () => {
   })
 })
 
-describe('address table (fake data)', () => {
-  const meta = { name: 'Test', regions: ['North', 'South'], shards: { words: [], en: [] }, address: true } as unknown as LanguageMeta
+describe('pronoun table (fake data)', () => {
+  const meta = { name: 'Test', regions: ['North', 'South'], shards: { words: [], en: [] }, pronouns: true } as unknown as LanguageMeta
   // Stored form: untagged choices have no `regions`.
-  const rows: StoredAddressRow[] = [
+  const rows: StoredPronounRow[] = [
     {
       id: 'parent',
       label: 'Your parents',
@@ -127,32 +127,32 @@ describe('address table (fake data)', () => {
       addressee: [{ word: 'kiddo', source: 'gloss' }],
     },
   ]
-  const files: Record<string, unknown> = { 'meta.json': meta, 'address.json': rows }
+  const files: Record<string, unknown> = { 'meta.json': meta, 'pronouns.json': rows }
   const dict = createDictionary({ lang: 'test', load: async (p) => files[p] })
   const words = (cs: { word: string }[]) => cs.map((c) => c.word)
 
   it('returns every row, with untagged choices counting as every region', async () => {
-    const all = await dict.address()
+    const all = await dict.pronouns()
     assert.deepEqual(all.map((r) => r.id), ['parent', 'younger'])
     assert.deepEqual(all[0].self[0].regions, ['North', 'South'])
     assert.equal(all[0].self[0].regionTagged, false)
   })
 
   it('filters by region, speaker and labels', async () => {
-    const [parent, younger] = await dict.address({ region: 'South', speaker: 'female' })
+    const [parent, younger] = await dict.pronouns({ region: 'South', speaker: 'female' })
     assert.deepEqual(words(parent.addressee), ['pa'])
     assert.deepEqual(words(younger.self), ['sis'])
-    assert.ok(words((await dict.address({ exclude: [] }))[0].addressee).includes('sire'))
+    assert.ok(words((await dict.pronouns({ exclude: [] }))[0].addressee).includes('sire'))
   })
 
   it('returns one relationship by id and rejects unknown ones', async () => {
-    assert.deepEqual((await dict.address({ listener: 'younger' })).map((r) => r.id), ['younger'])
-    await assert.rejects(dict.address({ listener: 'boss' }), /unknown listener "boss".*parent, younger/)
+    assert.deepEqual((await dict.pronouns({ listener: 'younger' })).map((r) => r.id), ['younger'])
+    await assert.rejects(dict.pronouns({ listener: 'boss' }), /unknown listener "boss".*parent, younger/)
   })
 
   it('is empty for languages without a table', async () => {
-    const none = createDictionary({ lang: 'none', load: async () => ({ ...meta, address: undefined }) })
-    assert.deepEqual(await none.address(), [])
+    const none = createDictionary({ lang: 'none', load: async () => ({ ...meta, pronouns: undefined }) })
+    assert.deepEqual(await none.pronouns(), [])
   })
 })
 
@@ -184,14 +184,14 @@ describe('Vietnamese data', { skip: !existsSync(viData) && 'run `npm run build:d
     assert.ok(!(await words('not')).includes('đéo'))
   })
 
-  it('has an address table built from pronoun definitions', async () => {
-    const [parent] = await dict.address({ listener: 'parent', region: 'Southern' })
+  it('has a pronoun table built from pronoun definitions', async () => {
+    const [parent] = await dict.pronouns({ listener: 'parent', region: 'Southern' })
     assert.deepEqual(parent.self.map((c) => c.word), ['con'])
     assert.equal(parent.self[0].source, 'gloss')
     assert.deepEqual(parent.addressee.map((c) => c.word), ['ba', 'má', 'mẹ'])
-    const [younger] = await dict.address({ listener: 'younger', speaker: 'female' })
+    const [younger] = await dict.pronouns({ listener: 'younger', speaker: 'female' })
     assert.deepEqual(younger.self.map((c) => c.word), ['chị'])
-    const [formal] = await dict.address({ listener: 'formal' })
+    const [formal] = await dict.pronouns({ listener: 'formal' })
     assert.deepEqual(formal.self.map((c) => c.word), ['tôi'])
   })
 })
@@ -287,5 +287,22 @@ describe('translator (real data)', { skip: !built && 'build en, vi and es data f
 
   it('keeps register: polite stays polite', async () => {
     assert.ok((await top('vâng', { from: 'vi', fromRegion: 'Northern', to: 'vi', toRegion: 'Southern' })).includes('dạ'))
+  })
+
+  it('puts the listener\'s pronouns first for "I" and "you"', async () => {
+    assert.equal((await top('I', { from: 'en', to: 'vi', listener: 'parent' }))[0], 'con')
+    assert.deepEqual((await top('you', { from: 'en', to: 'vi', listener: 'parent', toRegion: 'Southern' })).slice(0, 2), ['ba', 'má'])
+    assert.equal((await top('I', { from: 'en', to: 'vi', listener: 'younger', speaker: 'female' }))[0], 'chị')
+    assert.equal((await top('me', { from: 'en', to: 'vi', listener: 'teacher' }))[0], 'em')
+    // Without a pronoun table the listener is ignored; an unknown one throws.
+    assert.equal((await top('I', { from: 'en', to: 'es', listener: 'parent' }))[0], 'yo')
+    await assert.rejects(top('I', { from: 'en', to: 'vi', listener: 'boss' }), /unknown listener "boss"/)
+  })
+
+  it('lists the relationships for "I" senses', async () => {
+    const [group] = await tr.translate('I', { from: 'en', to: 'vi', toRegion: 'Southern' })
+    const parent = group.relationships?.find((r) => r.id === 'parent')
+    assert.deepEqual(parent?.words.map((c) => c.word), ['con'])
+    assert.ok(group.relationships?.find((r) => r.id === 'close-friend')?.warning)
   })
 })

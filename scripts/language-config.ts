@@ -57,25 +57,25 @@ export type LanguageConfig = {
   /** Letters per shard key (default 2). Large languages use 3 so each file stays small. */
   shardLength?: number
   /**
-   * The address table: how to say "I" and "you" depending on who you're talking to (see
-   * scripts/address.ts). For languages whose pronouns depend on the relationship, like Vietnamese.
+   * The pronoun table: how to say "I" and "you" depending on who you're talking to (see
+   * scripts/pronouns.ts). For languages whose pronouns depend on the relationship, like Vietnamese.
    */
-  address?: AddressRowConfig[]
+  pronouns?: PronounRowConfig[]
 }
 
 /**
- * One cell entry of the address table. With `gloss`, a pronoun sense of `word` whose definition matches
+ * One cell entry of the pronoun table. With `gloss`, a pronoun sense of `word` whose definition matches
  * it (region, labels and the definition come from that sense). Without, an override for something the
  * definitions don't say; `note` then says why it's there.
  */
-export type AddressPick =
+export type PronounPick =
   | { word: string; gloss: RegExp; speaker?: 'male' | 'female'; note?: string }
   | { word: string; gloss?: undefined; speaker?: 'male' | 'female'; regions?: string[]; labels?: string[]; note: string }
 
-export type AddressRowConfig = {
+export type PronounRowConfig = {
   id: string
   label: string
-  self: AddressPick[]
-  addressee: AddressPick[]
+  self: PronounPick[]
+  addressee: PronounPick[]
   warning?: string
 }

@@ -1,4 +1,4 @@
-// The address table: how to say "I" and "you" depending on who you're talking to.
+// The pronoun table: how to say "I" and "you" depending on who you're talking to.
 //
 // Vietnamese pronouns name the relationship ("con" = I, talking to a parent; "anh" = you, an older man),
 // and Wiktionary defines them that way: "I/me, your X" or "you, my X". A language config lists the
@@ -6,27 +6,27 @@
 // the definition from the matching sense. Overrides cover what no definition says (Vietnamese "em" is
 // only defined as "refers to any person described by the noun em", never "I").
 
-import type { AddressChoice, AddressRow, Entry, Sense } from '../packages/core/src/types.ts'
-import type { AddressPick, AddressRowConfig } from './language-config.ts'
+import type { PronounChoice, PronounRow, Entry, Sense } from '../packages/core/src/types.ts'
+import type { PronounPick, PronounRowConfig } from './language-config.ts'
 
-export type AddressReport = { fromGlosses: number; overrides: number; unmatched: string[] }
+export type PronounReport = { fromGlosses: number; overrides: number; unmatched: string[] }
 
 // Pronoun senses, plus variant senses of pronouns ("tui": alternative form of "tôi").
-const ADDRESS_POS = new Set(['pron'])
+const PRONOUN_POS = new Set(['pron'])
 
-export function buildAddressTable(
+export function buildPronounTable(
   entries: Entry[],
-  rows: AddressRowConfig[],
+  rows: PronounRowConfig[],
   allRegions: string[],
-): { rows: AddressRow[]; report: AddressReport } {
+): { rows: PronounRow[]; report: PronounReport } {
   const senses = new Map<string, Sense[]>()
   for (const e of entries) {
-    if (!ADDRESS_POS.has(e.pos)) continue
+    if (!PRONOUN_POS.has(e.pos)) continue
     senses.set(e.word, [...(senses.get(e.word) ?? []), ...e.senses])
   }
-  const report: AddressReport = { fromGlosses: 0, overrides: 0, unmatched: [] }
+  const report: PronounReport = { fromGlosses: 0, overrides: 0, unmatched: [] }
 
-  const pick = (row: string, side: string, p: AddressPick): AddressChoice | null => {
+  const pick = (row: string, side: string, p: PronounPick): PronounChoice | null => {
     const extra = { ...(p.speaker ? { speaker: p.speaker } : {}), ...(p.note ? { note: p.note } : {}) }
     if (!p.gloss) {
       report.overrides++
