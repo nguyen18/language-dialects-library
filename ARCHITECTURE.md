@@ -161,9 +161,13 @@ Known-correct cases; pass = a correct word in the top 3 of the first (most relev
 - Glosses with no plain term ("thank you" is glossed "to thank") or grammar words ("the") return nothing.
 - The real-data tests assert specific results (vi: hông, lợn/heo, chừ, má, pronouns; en: truck → lorry) and may need updating after a Kaikki refresh if Wiktionary changes. Real-data suites skip when that language isn't built.
 
-## Publishing (not yet done as of 2026-09-30)
+## Publishing
 
-Rebuild each language with `--refresh`, `npm test`, then publish each data package (`npm publish -w which-dialect-en`, `-vi`) and the API (`npm publish -w which-dialect`). Needs `npm login`. The owner decided (2026-09-30) to publish the data built and evaluated that day rather than refreshing. Dry run 2026-09-30: which-dialect 32.6 kB; -vi 3.4 MB (15.6 MB unpacked); -en ~35 MB (~136 MB unpacked after that day's rebuild). Unscoped names were free on npm on 2026-09-27. Data-only updates: bump the data package's patch version within `DATA_VERSION`'s range.
+**Published 2026-09-30:** `which-dialect`, `which-dialect-vi` and `which-dialect-en`, all **0.1.0**, from `main` at `02050b6`, by npm account `nguyen18`. The data is the data built and evaluated that day (the owner chose not to refresh from Kaikki first). Verified from a clean install: `createTranslator()` with defaults fetches from jsDelivr (`which-dialect-<lang>@0.1`) and gives I → tôi, I to a parent → con, he (Southern) → ảnh, ngô N→S → bắp, truck US→UK → lorry. Sizes: which-dialect 104 kB unpacked; -vi 15.6 MB; -en 136.4 MB (jsDelivr's limit is ~150 MB).
+
+**Rule (owner, 2026-09-30): publish after every merge to `main`.** npm won't republish a version, so first bump the packages whose contents changed: the API when `packages/core` changed, a data package when its built data changed. Use patch bumps for data (0.1.x stays within `DATA_VERSION` `'0.1'`); if the data format changes, bump `DATA_VERSION` and the data minor version together. Publish data packages before the API. Docs-only changes outside the packages (like this file) don't need a publish, but READMEs are inside the packages.
+
+**How:** rebuild changed languages (`--refresh` only when deliberately refreshing data), run `npm test`, `npm run typecheck` and `npm run evaluate`, then `npm publish -w which-dialect-vi --access public`, `-w which-dialect-en`, `-w which-dialect`. The account has **2FA**, so every publish needs a one-time code. That works reliably only in the owner's own terminal: npm asks `Enter one-time password:` after packing. Inside Claude Code's `!` prompt there is no interactive prompt (instant `EOTP`), and `--otp=<code>` there usually expires before the upload. `which-dialect` builds `dist/` itself (`prepublishOnly`).
 
 ## Working conventions
 
