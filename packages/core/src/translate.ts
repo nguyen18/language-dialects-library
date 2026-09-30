@@ -120,9 +120,9 @@ export type TranslationGroup = {
 }
 
 export type TranslateOptions = {
-  /** Source language code, e.g. "es". */
+  /** Source language code, e.g. "vi". */
   from: string
-  /** Target language code, e.g. "vi". Can equal `from` to translate between dialects of one language. */
+  /** Target language code, e.g. "en". Can equal `from` to translate between dialects of one language. */
   to: string
   /** Region or region group the source word is from, e.g. "Mexico". Keeps only senses used there. */
   fromRegion?: string

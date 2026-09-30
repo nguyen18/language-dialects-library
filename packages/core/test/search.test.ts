@@ -196,31 +196,6 @@ describe('Vietnamese data', { skip: !existsSync(viData) && 'run `npm run build:d
   })
 })
 
-// Checks against the real Spanish build. Run `npm run build:data -- es` first; skipped otherwise.
-const esData = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'es', 'data')
-describe('Spanish data', { skip: !existsSync(esData) && 'run `npm run build:data -- es` first' }, () => {
-  const dict = createDictionary({ lang: 'es', load: async (p) => JSON.parse(await readFile(join(esData, p), 'utf8')) })
-  const words = async (term: string, region?: string) => (await dict.searchEnglish(term, { region })).map((h) => h.word)
-
-  it('separates Spain from Latin America', async () => {
-    assert.equal((await words('car', 'Spain'))[0], 'coche')
-    // "auto" and "carro" are both everyday Mexican words; frequency puts "auto" first.
-    assert.ok((await words('car', 'Mexico')).slice(0, 3).includes('carro'))
-    assert.equal((await words('computer', 'Spain'))[0], 'ordenador')
-    assert.ok((await words('computer', 'Latin America')).includes('computadora'))
-  })
-
-  it('expands group tags to their countries', async () => {
-    assert.ok((await words('you', 'Argentina')).includes('vos'))
-    assert.ok((await words('popcorn', 'Argentina')).includes('pochoclo'))
-  })
-
-  it('leaves out inflected forms', async () => {
-    assert.deepEqual(await dict.lookup('hablamos'), [])
-    assert.ok((await dict.lookup('hablar')).length > 0)
-  })
-})
-
 describe('parts of speech', () => {
   it('names codes and maps English parts of speech to compatible ones', () => {
     assert.equal(posName('adj'), 'Adjective')
@@ -239,11 +214,11 @@ describe('regularBaseForms', () => {
   })
 })
 
-// Translator checks against the real English, Vietnamese and Spanish builds; skipped unless all are built.
+// Translator checks against the real English and Vietnamese builds; skipped unless both are built.
 // The fuller quality check is `npm run evaluate` (scripts/evaluate.ts).
 const root = join(dirname(fileURLToPath(import.meta.url)), '..', '..')
-const built = ['en', 'vi', 'es'].every((l) => existsSync(join(root, l, 'data')))
-describe('translator (real data)', { skip: !built && 'build en, vi and es data first' }, () => {
+const built = ['en', 'vi'].every((l) => existsSync(join(root, l, 'data')))
+describe('translator (real data)', { skip: !built && 'build en and vi data first' }, () => {
   const tr = createTranslator({
     load: (lang) => async (p) => JSON.parse(await readFile(join(root, lang, 'data', p), 'utf8')),
   })
@@ -266,13 +241,12 @@ describe('translator (real data)', { skip: !built && 'build en, vi and es data f
   })
 
   it('translates between languages, into a dialect', async () => {
-    assert.ok((await top('chido', { from: 'es', fromRegion: 'Mexico', to: 'vi', toRegion: 'Southern' })).includes('ngầu'))
-    assert.ok((await top('heo', { from: 'vi', fromRegion: 'Southern', to: 'es', toRegion: 'Mexico' })).some((w) => ['cerdo', 'puerco', 'cochino', 'chancho'].includes(w)))
+    assert.equal((await top('corn', { from: 'en', to: 'vi', toRegion: 'Southern' }))[0], 'bắp')
+    assert.ok((await top('heo', { from: 'vi', fromRegion: 'Southern', to: 'en' })).includes('pig'))
   })
 
   it('translates between dialects of one language', async () => {
     assert.equal((await top('ngô', { from: 'vi', fromRegion: 'Northern', to: 'vi', toRegion: 'Southern' }))[0], 'bắp')
-    assert.ok((await top('coche', { from: 'es', fromRegion: 'Spain', to: 'es', toRegion: 'Mexico' })).includes('carro'))
     assert.ok((await top('truck', { from: 'en', fromRegion: 'US', to: 'en', toRegion: 'UK' })).includes('lorry'))
   })
 
@@ -282,7 +256,6 @@ describe('translator (real data)', { skip: !built && 'build en, vi and es data f
     const cool = await top('cool', { from: 'en', to: 'vi', toRegion: 'Southern', meaning: 'awesome great' })
     assert.ok(cool.slice(0, 3).includes('ngầu'))
     assert.notEqual(cool[0], 'mát')
-    assert.equal((await top('cerdo', { from: 'es', to: 'vi', toRegion: 'Southern', pos: 'noun' }))[0], 'heo')
   })
 
   it('keeps register: polite stays polite', async () => {
@@ -295,7 +268,7 @@ describe('translator (real data)', { skip: !built && 'build en, vi and es data f
     assert.equal((await top('I', { from: 'en', to: 'vi', listener: 'younger', speaker: 'female' }))[0], 'chị')
     assert.equal((await top('me', { from: 'en', to: 'vi', listener: 'teacher' }))[0], 'em')
     // Without a pronoun table the listener is ignored; an unknown one throws.
-    assert.equal((await top('I', { from: 'en', to: 'es', listener: 'parent' }))[0], 'yo')
+    assert.equal((await top('tôi', { from: 'vi', to: 'en', pos: 'pron', listener: 'parent' }))[0], 'I')
     await assert.rejects(top('I', { from: 'en', to: 'vi', listener: 'boss' }), /unknown listener "boss"/)
   })
 
@@ -330,9 +303,9 @@ describe('translator (real data)', { skip: !built && 'build en, vi and es data f
     const con = await tr.translate('con', { from: 'vi', to: 'en', pos: 'pron' })
     const toParents = con.find((g) => g.source.glosses[0].includes('talking to their parents'))
     assert.deepEqual(toParents?.pronounUses?.map((u) => u.id), ['parent'])
-    // Into another language, as its "I".
-    const es = await tr.translate('em', { from: 'vi', to: 'es', pos: 'pron' })
-    assert.equal(es.find((g) => g.pronounUses?.some((u) => u.person === 'self'))?.translations[0]?.word, 'yo')
+    // Within Vietnamese, with a listener: em as "I" becomes the listener's word (con, to a parent).
+    const vi = await tr.translate('em', { from: 'vi', to: 'vi', pos: 'pron', listener: 'parent' })
+    assert.equal(vi.find((g) => g.pronounUses?.some((u) => u.person === 'self'))?.translations[0]?.word, 'con')
   })
 
   it('lists the relationships for "I" senses', async () => {

@@ -1,15 +1,17 @@
 # which-dialect
 
-Translate words **between languages and between dialects**, meaning by meaning: Mexican Spanish *chido* into Southern Vietnamese, Northern Vietnamese *ngô* into Southern *bắp*, Spain's *coche* into Mexico's *carro*, US *truck* into UK *lorry*. Dictionary data comes from [Wiktionary](https://en.wiktionary.org/) (via [Kaikki.org](https://kaikki.org/)) and loads only when you need it.
+Translate words **between languages and between dialects**, meaning by meaning: Northern Vietnamese *ngô* into Southern *bắp*, English *cool* (as in "awesome") into Southern Vietnamese *ngầu*, English "I" into the right Vietnamese pronoun for who you're talking to, US *truck* into UK *lorry*. Dictionary data comes from [Wiktionary](https://en.wiktionary.org/) (via [Kaikki.org](https://kaikki.org/)) and loads only when you need it.
+
+**Status:** which-dialect is starting with **Vietnamese**, with English as the bridge language, and the current focus is cleaning up Vietnamese translations. **More languages are planned.** The translator and data format are language-general, so adding one is a config file plus a data package (see [Adding a language](#adding-a-language)). Spanish was supported early on and has been removed for now so the work can focus on Vietnamese.
 
 ```ts
 import { createTranslator } from 'which-dialect'
 
 const tr = createTranslator()
 
-await tr.translate('chido', { from: 'es', fromRegion: 'Mexico', to: 'vi', toRegion: 'Southern' }) // bá cháy, chất, khét, ngầu
 await tr.translate('ngô', { from: 'vi', fromRegion: 'Northern', to: 'vi', toRegion: 'Southern' }) // bắp
-await tr.translate('coche', { from: 'es', fromRegion: 'Spain', to: 'es', toRegion: 'Mexico' })  // auto, carro, …
+await tr.translate('I', { from: 'en', to: 'vi', listener: 'parent' })                           // con
+await tr.translate('he', { from: 'en', to: 'vi', toRegion: 'Southern' })                        // ảnh, nó, …
 await tr.translate('truck', { from: 'en', fromRegion: 'US', to: 'en', toRegion: 'UK' })         // lorry
 await tr.translate('cool', { from: 'en', to: 'vi', toRegion: 'Southern', meaning: 'awesome' })  // bá cháy, chất, khét, ngầu (not mát, "cool" the temperature)
 ```
@@ -22,11 +24,10 @@ You install one small package. Dictionary data is **not bundled**: each lookup f
 
 | Language | Code | Data package | Regions | Entries | Region-tagged senses |
 |---|---|---|---|---|---|
-| Spanish | `es` | [`which-dialect-es`](packages/es) | 23 countries, plus groups: Latin America, Central America, Caribbean, South America, Río de la Plata | 123,995 | 11,940 of 153,963 (7.8%) |
 | Vietnamese | `vi` | [`which-dialect-vi`](packages/vi) | Northern, Central, Southern | 35,394 | 1,330 of 42,419 (3.1%) |
-| English | `en` | [`which-dialect-en`](packages/en) | 15 countries/areas (US, UK, Australia, India, …), plus groups: North America, British Isles, Commonwealth, … | 594,544 | 35,393 of 751,515 (4.7%) |
+| English | `en` | [`which-dialect-en`](packages/en) | 15 countries/areas (US, UK, Australia, India, …), plus groups: North America, British Isles, Commonwealth, … | 594,544 | 37,339 of 776,085 (4.8%) |
 
-Every pair of these languages can be translated in both directions, and between any of their regions, including between two dialects of one language.
+Vietnamese and English can be translated in both directions, and between any of their regions, including between two dialects of one language (Northern → Southern Vietnamese, US → UK English). English is also the bridge every language's definitions are written in.
 
 More languages are planned. Each one is a config file in [`languages/`](languages) plus a data package in `packages/<code>`; see [Adding a language](#adding-a-language).
 
@@ -49,7 +50,7 @@ Loads each language's data on demand. The options are only needed to self-host t
 | Option | Meaning |
 |---|---|
 | `from`, `to` | Language codes. They can be the same, to translate between dialects of one language. |
-| `fromRegion`, `toRegion` | Region or region group, e.g. `'Mexico'`, `'Latin America'`, `'Southern'`, `'UK'`. `fromRegion` keeps only the word's senses used there; `toRegion` ranks words tagged for it first and leaves out words tagged only for other regions. |
+| `fromRegion`, `toRegion` | Region or region group, e.g. `'Southern'`, `'Northern'`, `'UK'`, `'North America'`. `fromRegion` keeps only the word's senses used there; `toRegion` ranks words tagged for it first and leaves out words tagged only for other regions. |
 | `pos` | Only source senses with this part of speech, e.g. `'noun'`. |
 | `meaning` | A few words describing the meaning you want, e.g. `'awesome'` for *cool*. Matching senses and words rank first. |
 | `register` | `'casual'`, `'neutral'` or `'polite'`: the register you want translations in, instead of the source's own. `'casual'` favors colloquial words (Southern *tui* for "I"). |
@@ -76,22 +77,24 @@ The meanings of a word, following forms and variant spellings: useful for lettin
 Every language's data defines its words in English, so English is the bridge between any two languages. For each **meaning** of the source word:
 
 1. **Forms and variants go to the word they belong to:** irregular forms from the data (*said* → *say*), regular English forms by rule (*walked* → *walk*, *running* → *run*), texting spellings (*dont* → *don't*), and regional variants (*hông* → *không*, keeping its Southern region).
-2. **English terms carry the meaning:** the terms in its definition ("guagua": *bus*), or for English words the word itself and its synonyms.
+2. **English terms carry the meaning:** the terms in its definition ("bắp": *corn*), or for English words the word itself and its synonyms.
 3. **The target is searched with a compatible part of speech** (`compatiblePos`): a noun for a noun, but an English auxiliary verb may be a Vietnamese particle, and an adjective may be a verb in another language.
-4. **Wiktionary's translation tables** give the usual translation of each English meaning in each language, often with region tags (*car* → Spanish *coche* [Spain], *carro* [Mexico…], *auto* [Argentina…]; *cool* "mildly low temperature" → Vietnamese *mát*). Listed words get a strong boost, more when tagged for the target region, less when tagged only for other regions. Between non-English languages, the English meaning whose table lists the source word bridges them (*coche* → *car* → *xe hơi*).
-5. **Within one language, synonyms are direct equivalents.** Wiktionary lists dialect words as synonyms (*ngô* → *bắp*, *coche* → *carro*, *lift* → *elevator*), in either direction (*dạ* lists *vâng*).
-6. **Ranking** favors **common words** ([word frequencies](#word-frequencies): *anh* over the niche *cô nương* for "you"), target words whose definition shares the source definition's details, whose *main* meaning is the match (*maíz* over *borona*, which mostly means millet), that are tagged for the target region, and that keep the **register**: a polite word translates to a polite word (Northern *vâng* → Southern *dạ*), slang to slang.
+4. **Wiktionary's translation tables** give the usual translation of each English meaning in each language, often with region and register tags ("I" → Vietnamese *tôi*, *tớ* (informal), *tui* (South); *cool* "mildly low temperature" → *mát*). Listed words get a strong boost, more when tagged for the target region, less when tagged only for other regions. From another language, the English meaning whose table lists the source word is the same meaning.
+5. **Within one language, synonyms are direct equivalents.** Wiktionary lists dialect words as synonyms (*ngô* → *bắp*, *lợn* → *heo*, *lift* → *elevator*), in either direction (*dạ* lists *vâng*).
+6. **Ranking** favors **common words** ([word frequencies](#word-frequencies): *anh* over the niche *cô nương* for "you"), target words whose definition shares the source definition's details, whose *main* meaning is the match, that are tagged for the target region, and that keep the **register**: a polite word translates to a polite word (Northern *vâng* → Southern *dạ*), slang to slang.
 
-Meanings are ordered by `meaning` (if given), then by being tagged for `fromRegion`, then the dictionary's own order, which lists main meanings first. That order is a guess when a word has several parts of speech: Spanish *cerdo* is listed as an adjective ("dirty") before the noun ("pig"). Pass `pos` or `meaning` when you know which one you want.
+Meanings are ordered by `meaning` (if given), then by being tagged for `fromRegion`, then the dictionary's own order, which lists main meanings first. That order is a guess when a word has several parts of speech: English *just* is listed as an adjective ("fair") before the adverb. Pass `pos` or `meaning` when you know which one you want.
 
 ### How accurate is it?
 
-`npm run evaluate` runs known-correct translations across language pairs and dialect pairs (English → Vietnamese and Spanish by region, Spanish ↔ Vietnamese, Northern → Southern Vietnamese, Spain ↔ Mexico, US ↔ UK, into English). A case passes when a correct word is in the top 3 of the first meaning:
+`npm run evaluate` runs known-correct translations across language pairs and dialect pairs (English → Vietnamese by region, including pronouns, Northern → Southern Vietnamese, US ↔ UK, Vietnamese → English). A case passes when a correct word is in the top 3 of the first meaning:
 
 | Set | Correct word in top 3 | Correct word first |
 |---|---|---|
-| Tuning set (used while developing) | 77 / 79 (97%) | 71 / 79 (90%) |
-| Held-out set (written afterwards, not tuned against) | 30 / 30 (100%) | 28 / 30 (93%) |
+| Tuning set (used while developing) | 42 / 42 (100%) | 42 / 42 (100%) |
+| Held-out set (written afterwards, not tuned against) | 17 / 17 (100%) | 16 / 17 (94%) |
+
+The cases involving Spanish were removed with it. The held-out set has since been looked at, so new held-out cases are needed before relying on it (see [`FUTURE_IMPROVEMENTS.md`](FUTURE_IMPROVEMENTS.md)).
 
 ## Looking words up
 
@@ -122,10 +125,10 @@ Entries and results use Wiktionary's part-of-speech codes (`noun`, `verb`, `adj`
 
 ## How regions work
 
-Each language defines its regions: dialect areas for Vietnamese, countries for Spanish. Wiktionary tags some senses with a region; for example Spanish *guagua* "bus" is tagged Caribbean and Canary Islands. **Senses with no region tag are treated as used in every region**, and marked `regionTagged: false`, so you can tell a confirmed regional word from an assumed one.
+Each language defines its regions: dialect areas for Vietnamese, countries and areas for English. Wiktionary tags some senses with a region; for example Vietnamese *lợn* "pig" is tagged Northern and *heo* Central and Southern. **Senses with no region tag are treated as used in every region**, and marked `regionTagged: false`, so you can tell a confirmed regional word from an assumed one.
 
 - **Per sense, not per word:** Vietnamese *má* means "cheek" everywhere, but "mother" only in the South.
-- **Groups:** a language can define groups of regions. Wiktionary's group tags (Spanish "Latin America", "Rioplatense") count for every region in the group, and you can search a group as a whole.
+- **Groups:** a language can define groups of regions. Wiktionary's group tags (English "British Isles", "North America") count for every region in the group, and you can search a group as a whole.
 - **Variants:** words recorded as a variant of another ("Southern Vietnam form of *không*") are found by the other word's meanings, so "not" finds *hông*, and keep their region when translated.
 
 ## Limitations
@@ -137,7 +140,6 @@ This is a suggestion tool, not a curated translation dictionary. Check results b
 - **English is the bridge.** Translating between two non-English languages goes through English definitions, so nuance English doesn't mark can be lost.
 - **`meaning` matches words, not ideas.** It compares your words with the dictionary's definitions (and the top translation's), so "awesome" won't find a sense defined as "Fashionable; trendy; hip." Use the definition's own wording, or let users pick from `senses()`.
 - **Grammar words translate poorly.** Words defined by their function ("marks the future tense" for Vietnamese *sẽ*) aren't reached from English *will*; *the*, *is* or *gonna* may give nothing useful.
-- **Base words only for Spanish.** Conjugations and plurals are left out; use *hablar*, not *hablamos*.
 
 ## Word frequencies
 
@@ -153,7 +155,7 @@ wordfreq's data comes from, and is credited to:
 - SUBTLEX word lists (SUBTLEX-US, SUBTLEX-UK, SUBTLEX-CH, SUBTLEX-DE, SUBTLEX-NL) created by **Marc Brysbaert et al.**; SUBTLEX is freely available data (<http://crr.ugent.be/programs-data/subtitle-frequencies>).
 - Word statistics gathered from the Twitter streaming API (no Twitter content is included).
 
-wordfreq measures commonness **worldwide**, so a regional word (Cuban *guagua*, "bus") can look rare even where it's the everyday word; the region bonus is kept separate from frequency for that reason.
+wordfreq measures commonness **worldwide**, so a regional word can look rare even where it's the everyday word; the region bonus is kept separate from frequency for that reason.
 
 ## License and attribution
 
@@ -172,30 +174,30 @@ Requires Node 22.6+ (TypeScript scripts run with `--experimental-strip-types`).
 
 ```sh
 npm install
-npm run build:data -- es             # download Kaikki's file for a language (cached in .cache/) and build packages/<code>/data
-npm run build:data -- es --refresh   # re-download first
+npm run build:data -- vi             # download Kaikki's file for a language (cached in .cache/) and build packages/<code>/data
+npm run build:data -- vi --refresh   # re-download first
 npm test                             # unit tests, plus checks against whichever languages are built
 npm run evaluate                     # translation accuracy on known-correct cases (-- --verbose to see every case)
 npm run typecheck
 npm run build                        # compile the API to packages/core/dist
 ```
 
-Generated data isn't committed (it would bloat git history); it's built before publishing. Downloads: Vietnamese 79 MB, Spanish 1 GB, English 3.3 GB. Builds take seconds (English: about 25 s and 1.4 GB of memory).
+Generated data isn't committed (it would bloat git history); it's built before publishing. Downloads: Vietnamese 79 MB, English 3.3 GB. Builds take seconds (English: about 25 s and 1.4 GB of memory).
 
 ### Adding a language
 
-1. Add `languages/<code>.ts`: the Kaikki language name, the language's regions (and groups, if any), and how to read regions from Wiktionary's tags. See [`languages/vi.ts`](languages/vi.ts) (dialect areas), [`languages/es.ts`](languages/es.ts) (countries and groups) and [`languages/en.ts`](languages/en.ts) (trimming a very large language). Set `skipFormOf` for heavily inflected languages; for very large ones, see the trimming options in [`scripts/language-config.ts`](scripts/language-config.ts) (`dropTechnical`, `formOfPos`, `keepFormOf`, `maxSensesPerEntry`, `shardLength`, …).
-2. Copy a data package (`packages/es`) to `packages/<code>` and update its `package.json` and `README.md`.
-3. `npm run build:data -- <code>`, check the results, add a few real-data tests, and publish.
+1. Add `languages/<code>.ts`: the Kaikki language name, the language's regions (and groups, if any), and how to read regions from Wiktionary's tags. See [`languages/vi.ts`](languages/vi.ts) (dialect areas and a pronoun table) and [`languages/en.ts`](languages/en.ts) (countries with region groups, and trimming a very large language). Spanish was built this way too (countries and region groups; `languages/es.ts` in the git history). Set `skipFormOf` for heavily inflected languages; for very large ones, see the trimming options in [`scripts/language-config.ts`](scripts/language-config.ts) (`dropTechnical`, `formOfPos`, `keepFormOf`, `maxSensesPerEntry`, `shardLength`, …).
+2. Copy a data package (`packages/vi`) to `packages/<code>` and update its `package.json` and `README.md`.
+3. Add the language's code to `translationLangs` in `languages/en.ts` (so English keeps its translation tables for it) and rebuild English.
+4. `npm run build:data -- <code>`, check the results, add a few real-data tests and evaluation cases, and publish.
 
 Languages in non-Latin scripts (Chinese, Arabic, Russian, …) will need a script-aware version of `shardKey` first: today files are split by the first two Latin letters.
 
 ### Publishing
 
 ```sh
-npm run build:data -- en --refresh && npm run build:data -- es --refresh && npm run build:data -- vi --refresh && npm test
+npm run build:data -- en --refresh && npm run build:data -- vi --refresh && npm test
 npm publish -w which-dialect-en
-npm publish -w which-dialect-es
 npm publish -w which-dialect-vi
 npm publish -w which-dialect
 ```

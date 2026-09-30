@@ -102,7 +102,7 @@ const config: LanguageConfig = {
   // English word itself is the answer.
   englishIndex: 'regional',
   // Translation tables for the languages which-dialect has. Add a language's code here when adding it.
-  translationLangs: ['vi', 'es'],
+  translationLangs: ['vi'],
   wordfreq: 'large',
   shardLength: 3,
 }
