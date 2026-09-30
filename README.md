@@ -63,6 +63,7 @@ It returns `TranslationGroup[]`, most relevant meaning first. Each group has:
 
 - `source`: the meaning being translated: `lemma` (the base or standard word, e.g. *say* for *said*), `pos`, `glosses` (its English definitions), `regions`, `labels`, and `via` when the word led there ("simple past of say", "Southern Vietnam form of không").
 - `translations`: target words, best first, each with its own `pos`, `gloss`, `regions`, `labels`, a `score`, and `bridge` (how it was found; `'pronouns'` for the listener's words, which also carry `relationship`, e.g. "Your parents").
+- `pronounUses` (source words in the source language's pronoun table): the relationships the word is used in with this meaning, `{ id, label, person: 'self' | 'addressee', speaker?, regions, note?, warning? }`. Uses no definition covers get a group of their own, translated as "I" or "you": Vietnamese *em* → "I/me, when talking to: someone a bit older (man); …; your teacher" and "you, when talking to: someone younger; …"; *ba* → "you, when talking to: your parents". Pass `pos: 'pron'` to get only these.
 - `relationships` (singular "I"/"you" meanings into a language with a pronoun table): the word for each relationship, `{ id, label, words, warning? }`, filtered by `toRegion`, `speaker` and `exclude`, for showing "it depends on who you're talking to".
 
 ### `translator.senses(word, { from, fromRegion?, pos? })`

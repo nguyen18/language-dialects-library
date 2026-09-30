@@ -299,6 +299,24 @@ describe('translator (real data)', { skip: !built && 'build en, vi and es data f
     await assert.rejects(top('I', { from: 'en', to: 'vi', listener: 'boss' }), /unknown listener "boss"/)
   })
 
+  it('says when a source pronoun is used (reverse direction)', async () => {
+    // "em" is never defined as "I": its uses come from the pronoun table, in groups of their own.
+    const em = await tr.translate('em', { from: 'vi', to: 'en', pos: 'pron' })
+    const self = em.find((g) => g.pronounUses?.some((u) => u.person === 'self'))
+    assert.deepEqual(self?.translations.map((t) => t.word).slice(0, 2), ['I', 'me'])
+    assert.ok(self?.pronounUses?.some((u) => u.id === 'teacher'))
+    const you = em.find((g) => g.pronounUses?.some((u) => u.person === 'addressee'))
+    assert.equal(you?.translations[0]?.word, 'you')
+    assert.ok(you?.pronounUses?.some((u) => u.id === 'younger'))
+    // "con" has its own definition for talking to parents; the use goes on that group.
+    const con = await tr.translate('con', { from: 'vi', to: 'en', pos: 'pron' })
+    const toParents = con.find((g) => g.source.glosses[0].includes('talking to their parents'))
+    assert.deepEqual(toParents?.pronounUses?.map((u) => u.id), ['parent'])
+    // Into another language, as its "I".
+    const es = await tr.translate('em', { from: 'vi', to: 'es', pos: 'pron' })
+    assert.equal(es.find((g) => g.pronounUses?.some((u) => u.person === 'self'))?.translations[0]?.word, 'yo')
+  })
+
   it('lists the relationships for "I" senses', async () => {
     const [group] = await tr.translate('I', { from: 'en', to: 'vi', toRegion: 'Southern' })
     const parent = group.relationships?.find((r) => r.id === 'parent')
