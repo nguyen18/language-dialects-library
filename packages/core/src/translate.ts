@@ -303,22 +303,26 @@ const EXACT_GLOSS_BONUS = 3
 // restricted use of the word, not its general meaning (see narrows()).
 const NARROWED_PENALTY = 1.5
 
-// A parenthetical narrows a term when it names something the source meaning doesn't: "(go to the
-// bathroom, laugh, etc.)" does; "(awesome; fantastic; great)" for cool = awesome and "(for)" don't.
+// A parenthetical narrows a term when it names something the source meaning doesn't: "to want to (go to
+// the bathroom, laugh, etc.)", "in/at (an outdoor or external location)". Restatements ("ngầu": "cool
+// (awesome; fantastic; great)" for cool = awesome), grammar ("to wait (for)") and usage notes, which say
+// how the word is used rather than what it means ("dạ": "yes (answers a question)"), don't narrow.
+const USAGE_NOTE = /^\s*(?:used|said|\w+s\s+(?:a|an|the|that|for|to|with|about)\b)/i
 function narrows(parenthetical: string, context: Set<string>): boolean {
-  return contentWords(parenthetical).size > 0 && overlap(context, parenthetical) === 0
+  return contentWords(parenthetical).size > 0 && !USAGE_NOTE.test(parenthetical) && overlap(context, parenthetical) === 0
 }
 
 function exactGloss(gloss: string, term: string, context: Set<string>): boolean {
   // "to wait for" is plain "wait", but a part with a narrowing parenthetical isn't ("to want to (…)").
-  return gloss
-    .replace(/\(([^)]*)\)/g, (_, inner: string) => (narrows(inner, context) ? '(' : ' '))
-    .split(/[;,/]/)
-    .some((part) => {
-      if (part.includes('(')) return false
-      const t = normalizeEnglish(part.replace(/[.!?]+\s*$/, ''))
-      return t === term || t.replace(TRAILING_PARTICLE, '') === term
-    })
+  // Like glossTerms, only the text after a colon is the meaning ("Used as an answer …: no"). A question
+  // ("dạ": "yes? (asks for more information)") isn't the plain word.
+  let cleaned = gloss.replace(/\(([^)]*)\)/g, (_, inner: string) => (narrows(inner, context) ? '(' : ' '))
+  if (cleaned.includes(':')) cleaned = cleaned.slice(cleaned.lastIndexOf(':') + 1)
+  return cleaned.split(/[;,/]/).some((part) => {
+    if (part.includes('(')) return false
+    const t = normalizeEnglish(part.replace(/[.!]+\s*$/, ''))
+    return t === term || t.replace(TRAILING_PARTICLE, '') === term
+  })
 }
 
 function narrowed(gloss: string, term: string, context: Set<string>): boolean {
