@@ -110,6 +110,16 @@ describe('journal review (real data)', { skip: !built && 'build en and vi data f
     assert.equal(more.corrected, 'Hôm nay tôi đi chợ với má. Tôi muốn ăn thịt heo nhưng mắc quá. Ngày mai tôi đi lại không?')
   })
 
+  it('uses a clause frame inside an English part, and corrects the rest word by word', async () => {
+    // The example in Language Helper's JOURNAL_PLAN.md.
+    const review = await reviewer.review('Hôm nay tôi đi market với má. Toi muon an the ice cream but it was expensive. Ngày mai tui đi lại khong?', { lang: 'vi', region: 'Southern' })
+    assert.equal(review.corrected, 'Hôm nay tôi đi chợ với má. Tôi muốn ăn kem nhưng mắc quá. Ngày mai tui đi lại không?')
+    assert.ok(review.sentences[1].changes.some((c) => c.kind === 'frame' && c.from === 'but it was expensive'))
+    // A clause that doesn't fit a frame stays word by word, not cut short ("but it was very" + "expensive").
+    const very = await reviewer.review('Tôi muốn ăn kem but it was very expensive.', { lang: 'vi', region: 'Southern' })
+    assert.equal(very.corrected, 'Tôi muốn ăn kem nhưng nó là rất mắc.')
+  })
+
   it('corrects every word, leaves out "the", and lists frames without changing the sentence', async () => {
     const review = await reviewer.review('Toi muon an the ice cream. Bạn có đi chợ? The weather is nice today.', { lang: 'vi' })
     assert.equal(review.sentences[0].corrected, 'Tôi muốn ăn kem.')

@@ -123,19 +123,35 @@ export function createReviewer(options: TranslatorOptions = {}): Reviewer {
           parts: groups.map((g) => ({ text: text.slice(g.units[0].start, g.units[g.units.length - 1].end), lang: g.lang })),
         }
         const whole = groups.length === 1 && groups[0].lang === base
-        for (const g of groups.filter((g) => g.lang === base)) {
-          const from = text.slice(g.units[0].start, g.units[g.units.length - 1].end)
-          // A whole sentence is matched with its own punctuation ("Where is the bathroom?").
-          const frame = await phrasebook.match(whole ? text.slice(start, end) : from, o)
-          if (!frame?.complete) continue
+        const fill = async (span: Unit[], frame: NonNullable<Awaited<ReturnType<typeof phrasebook.match>>>) => {
+          const from = text.slice(span[0].start, span[span.length - 1].end)
           const info = await frameOf(frame.id)
           let to = frame.text.replace(/[.!?…]+$/, '')
-          if (!whole && g.units[0].start !== start) to = to.charAt(0).toLowerCase() + to.slice(1)
+          if (span[0].start !== start) to = to.charAt(0).toLowerCase() + to.slice(1)
           draft.replacements.push({
-            start: g.units[0].start, end: g.units[g.units.length - 1].end, to,
+            start: span[0].start, end: span[span.length - 1].end, to,
             change: { kind: 'frame', from, to, why: `Sentence frame “${info.en}”` },
           })
           draft.frames.push(info)
+        }
+        for (const g of groups.filter((g) => g.lang === base)) {
+          // A whole sentence is matched with its own punctuation ("Where is the bathroom?").
+          const whole_ = whole ? text.slice(start, end) : text.slice(g.units[0].start, g.units[g.units.length - 1].end)
+          const frame = await phrasebook.match(whole_, o)
+          if (frame?.complete) {
+            await fill(g.units, frame)
+            continue
+          }
+          // Otherwise a clause frame ending the part, longest first ("the ice cream but it was expensive":
+          // "but it was expensive"); the rest is translated word by word by the checker. Only spans ending
+          // with the part, so a clause isn't cut short ("but it was very" with "expensive" left over).
+          for (let len = g.units.length - 1; len >= 2; len--) {
+            const span = g.units.slice(g.units.length - len)
+            const m = await phrasebook.match(text.slice(span[0].start, span[len - 1].end), o)
+            if (!m?.complete || !m.clause) continue
+            await fill(span, m)
+            break
+          }
         }
         drafts.push(draft)
       }
