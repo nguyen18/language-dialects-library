@@ -143,11 +143,59 @@ The checks:
 - **`dialect`**: words whose main meaning is tagged for another region (*lợn* in Southern text → *heo*; *muỗng* in Northern → *thìa*; in English, US *apartment* in UK text → *flat*). Words with an untagged main meaning are never flagged (*má* is "cheek" everywhere).
 - **`pronoun-relationship`**: pronouns that don't fit the listener (*tôi* to a parent → *con*; to a teacher → *em*).
 - **`pronoun-pair`**: "I" and "you" pronouns that never go together (*tao* goes with *mày*, not *bạn*), when no listener is given.
+- **`pronoun-consistency`**: switching words for the same person within one text (*tôi* in one sentence, *tui* in the next): keep the first.
 - **`polite-ending`**: a suggestion to end sentences with *ạ* when talking to parents, elders and teachers (not for exclamations).
 
 The checker only speaks up when it's confident, so **no issues means none of the checks found anything, not that the text is correct**. It doesn't check word order, classifiers or whether a sentence sounds natural yet. Only reliable pronouns are checked: kinship words like *con* (also "child", and a classifier in *con chó*) aren't, and *bạn* (also "friend") only gets suggestions.
 
 **Every language uses the same checks.** They read only the language's data and its `checker` settings in `languages/<code>.ts` (how text splits into words, which pronouns are reliable, polite endings), so a check whose data a language doesn't have is skipped. A language without checker settings still gets the `dialect` check.
+
+## Sentence frames
+
+Common sentences with slots, filled for a region, a listener and a register: *Where is {place}?* is *{place} ở **đâu**?*, and in Central Vietnamese *{place} ở **mô**?*; *Have you eaten yet?* to a parent in the South is *Ba ăn cơm chưa ạ?*, to a friend *Bạn ăn cơm chưa?*.
+
+```ts
+import { createPhrasebook } from 'which-dialect'
+
+const pb = createPhrasebook()
+await pb.frames({ lang: 'vi', region: 'Southern', topic: 'questions' })       // every frame, slots open
+await pb.render('ask-where', { lang: 'vi', region: 'Central', slots: { place: 'bathroom' } })
+// → { text: 'Phòng tắm ở mô?', parts: [{ text: 'Phòng tắm', kind: 'content', from: 'bathroom' }, …,
+//      { text: 'mô', kind: 'word', why: 'where (Central)' }, …], complete: true }
+await pb.match('Do you want coffee?', { lang: 'vi' })                         // → 'Bạn có muốn cà phê không?'
+await pb.matchFrames('Bạn có đi?', { lang: 'vi' })                            // → 'Bạn có đi không?' (missing "không")
+```
+
+Options: `lang`, `region`, `listener` (a pronoun-table row id; without it, the neutral default row), `speaker`, `register` (`'casual'` allows colloquial words like Southern *hông*, *tui*). Content slots take English (translated for you, in the region) or `{ text }` in the language itself. `parts` says why each word was chosen, for highlighting. `matchFrames` recognizes a frame in a sentence in the language itself and returns the changes the frame suggests: a missing required word (*không*), a word from another region (*mô* in Southern text → *đâu*), missing accents in a frame position (*Toi* → *Tôi*), and, only when a listener is given, a pronoun that doesn't fit them.
+
+The frames themselves are written once, in English, in [`languages/frames.ts`](languages/frames.ts) (34 so far: journal sentences, feelings, questions, requests, greetings). Each language says how it expresses them (`frames` in `languages/<code>.ts`), with pronoun slots (`{I}`, `{YOU}`, `{WE_INCL}`, …, filled from the pronoun table) and **frame words** for what changes by region (`frameWords`: Vietnamese `{WHERE}` *đâu* / Central *mô*, `{HOW}` Northern *thế nào* / *sao* / Central *răng*, `{SOFT}` Northern *nhé* / Central and Southern *nha*, `{Q_END}` *không* / Southern casual *hông*, `{POLITE}` *ạ* when speaking up). Each frame word comes from a dictionary definition, keeping its region and labels, or from an override with a note, like the pronoun table. A language without frames returns none.
+
+## Reviewing journal entries
+
+`createReviewer().review(entry, { lang, base?, region?, listener?, speaker?, register? })` reviews an entry written in the target language, the learner's own language (`base`, default `'en'`), or a mix of both, and returns the corrected entry sentence by sentence:
+
+```ts
+import { createReviewer } from 'which-dialect'
+
+const review = await createReviewer().review(
+  'Hôm nay tôi đi market với má. Tôi muốn ăn thịt lợn but it was expensive. Ngày mai tui đi lại khong?',
+  { lang: 'vi', region: 'Southern' },
+)
+review.corrected
+// 'Hôm nay tôi đi chợ với má. Tôi muốn ăn thịt heo nhưng mắc quá. Ngày mai tôi đi lại không?'
+review.sentences[1].changes
+// [{ from: 'but it was expensive', to: 'nhưng mắc quá', kind: 'frame', why: 'Sentence frame “but it was {quality}”' },
+//  { from: 'lợn', to: 'heo', kind: 'dialect', why: '“lợn” is Northern; in Southern Vietnamese, say “heo”.' }]
+```
+
+For each sentence:
+
+1. **Each word is marked as the target or the base language** (`parts`), from the two dictionaries alone. Words that could be either (*an*, *to*) take their neighbors' language; an English word that's Vietnamese only with accents added (*but*: *bút*) stays English, while Vietnamese typed without accents (*khong*) stays Vietnamese.
+2. **Base-language parts are replaced:** a whole sentence or clause that follows a sentence frame is filled in (*but it was expensive* → *nhưng mắc quá*; *Where is the bathroom?* → *Phòng tắm ở đâu?*), and words or short phrases (up to 3 words) are translated in the region (*market* → *chợ*). Anything longer is left as written and listed in `unchecked`: the review doesn't guess.
+3. **The grammar checker runs on the whole entry**, so consistency checks see every sentence (*tôi* earlier, *tui* later). Its errors and warnings are applied (`changes`); its suggestions, like ending with *ạ*, are returned as `hints`.
+4. **The corrected sentence is checked against sentence frames** (*Bạn có đi chợ?* → *Bạn có đi chợ không?*), and the frames it follows are listed (`frames`), for suggesting patterns to reuse.
+
+Each sentence has `original`, `parts`, `corrected`, `changes` (`{ from, to, why, kind }`), `hints`, `frames` (`{ id, en, text }`, the frame's English and its pattern) and `unchecked`. For a journal, leave `listener` out: people written about (*má*, *thầy*) aren't treated as the listener. Rules can't fix everything: scrambled word order, missing verbs, or English sentences no frame covers come back as written, and plain-letter words that are also Vietnamese words (*toi*, *di*) are only fixed when a sentence frame shows what they should be.
 
 ## Looking words up
 
@@ -157,6 +205,7 @@ One language's dictionary. `baseUrl` defaults to `https://cdn.jsdelivr.net/npm/w
 
 - `dictionary.lookup(word)`: all entries for a word, with every sense's definitions, regions, labels, synonyms and variant links (`altOf`).
 - `dictionary.searchEnglish(term, { region?, pos?, exclude?, limit?, allSenses? })`: words for an English term in this language, one per word, best first (no meaning handling: use the translator for that). `allSenses: true` returns every matching sense of those words instead.
+- `dictionary.frames()`: the language's sentence frames and frame words, unfilled (`{ frames, words }`; empty without frames).
 - `dictionary.checker()` / `dictionary.syllables()`: the language's checker settings and syllable list (with frequencies), used by `createChecker` (`{}` for languages without them).
 - `dictionary.picks()`: the language's [hand-picked words](#hand-picked-words), `{ word, pos, gloss, picks: [{ word, tags? }], first? }` per English meaning (empty for languages without any).
 - `dictionary.meta()`: the language's name, regions, region groups, source, license, build date and counts.
@@ -255,7 +304,8 @@ Generated data isn't committed (it would bloat git history); it's built before p
 3. Add the language's code to `translationLangs` in `languages/en.ts` (so English keeps its translation tables for it) and rebuild English.
 4. `npm run build:data -- <code>`, check the results, add a few real-data tests and evaluation cases, and publish.
 5. Optional: [checker](#checking-text) settings (`checker` in `languages/<code>.ts`): `units: 'syllables'` for languages written in syllables (also builds the syllable list for accent suggestions), `maxWordUnits`, the reliable `pronouns` per pronoun-table column, `ambiguousPronouns`, and `politeEndings`. Without them, the language is read as space-separated words and gets the region check.
-6. Optional, later: [hand-picked words](#hand-picked-words). A speaker runs `npm run picks-sheet -- <code>`, fills in `your_pick` only where the first choice is wrong, and pastes the `--apply` output into `picks`.
+6. Optional: [sentence frames](#sentence-frames): `frames` (how the language says each frame in `languages/frames.ts`) and `frameWords` (the words that change by region, each from a definition or an override with a note). Frames reach other languages through the shared catalog; a new frame goes in the catalog once.
+7. Optional, later: [hand-picked words](#hand-picked-words). A speaker runs `npm run picks-sheet -- <code>`, fills in `your_pick` only where the first choice is wrong, and pastes the `--apply` output into `picks`.
 
 Languages in non-Latin scripts (Chinese, Arabic, Russian, …) will need a script-aware version of `shardKey` first: today files are split by the first two Latin letters.
 

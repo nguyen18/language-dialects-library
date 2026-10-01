@@ -27,6 +27,7 @@ import {
   type WordShard,
 } from '../packages/core/src/types.ts'
 import { recordDataUpdate } from './data-updates.ts'
+import { buildFrames } from './frames.ts'
 import { writePicks } from './picks.ts'
 import { buildPronounTable } from './pronouns.ts'
 import { loadFrequencies, WORDFREQ_CREDIT } from './frequency.ts'
@@ -370,6 +371,13 @@ async function main() {
     }
   }
 
+  if (config.frames) {
+    const { data, report } = buildFrames(entries, config)
+    await writeFile(join(outDir, 'frames.json'), JSON.stringify(data))
+    console.log(`Sentence frames: ${report.frames} frames, ${report.fromGlosses} words from definitions, ${report.overrides} overrides`)
+    for (const p of report.problems) console.warn(`  WARNING: ${p}`)
+  }
+
   const senses = entries.flatMap((e) => e.senses)
   const meta: LanguageMeta = {
     lang: config.lang,
@@ -395,6 +403,7 @@ async function main() {
     ...(config.pronouns ? { pronouns: true } : {}),
     ...(config.checker ? { checker: true } : {}),
     ...(config.checker?.units === 'syllables' ? { syllables: true } : {}),
+    ...(config.frames ? { frames: true } : {}),
   }
   await writeFile(join(outDir, 'meta.json'), JSON.stringify(meta, null, 2))
   await writePicks(config)

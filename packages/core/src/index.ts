@@ -4,6 +4,8 @@ import {
   normalizeEnglish,
   shardKey,
   type CheckerConfig,
+  type FramesData,
+  type StoredFramesData,
   type PronounRow,
   type EnglishShard,
   type Entry,
@@ -101,6 +103,8 @@ export type Dictionary = {
   checker(): Promise<CheckerConfig>
   /** Syllable → Zipf frequency (0 when unknown), for languages written in syllables; `{}` otherwise. */
   syllables(): Promise<Record<string, number>>
+  /** The language's sentence frames and frame words, unfilled (see FramesData); empty without frames. */
+  frames(): Promise<FramesData>
 }
 
 /**
@@ -217,6 +221,16 @@ export function createDictionary(options: DictionaryOptions): Dictionary {
       return m.syllables ? loadOnce<Record<string, number>>('syllables.json') : {}
     },
 
+    async frames() {
+      const m = await meta()
+      if (!m.frames) return { frames: [], words: {} }
+      const stored = await loadOnce<StoredFramesData>('frames.json')
+      return {
+        frames: stored.frames,
+        words: Object.fromEntries(Object.entries(stored.words).map(([k, w]) => [k, { ...w, choices: w.choices.map((c) => fromStored(c, m.regions)) }])),
+      }
+    },
+
     async pronouns({ listener, region, speaker, exclude = DEFAULT_EXCLUDED_LABELS } = {}) {
       const m = await meta()
       if (!m.pronouns) return []
@@ -243,3 +257,6 @@ export function createDictionary(options: DictionaryOptions): Dictionary {
 
 export * from './translate.ts'
 export * from './check.ts'
+export * from './text.ts'
+export * from './phrasebook.ts'
+export * from './review.ts'

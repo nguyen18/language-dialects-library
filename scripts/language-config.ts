@@ -71,7 +71,22 @@ export type LanguageConfig = {
   picks?: PickRowConfig[]
   /** How the grammar checker reads the language (see CheckerConfig); stored as data/checker.json. */
   checker?: CheckerConfig
+  /**
+   * How this language says the shared sentence frames (languages/frames.ts), by frame id. `text` has
+   * {slot} placeholders: the frame's content slots, pronoun slots ({I}, {YOU}, …) and `frameWords` keys.
+   */
+  frames?: { frame: string; text: string; note?: string }[]
+  /** The words for frame word slots ({WHERE}, {Q_END}, …), each from a definition or an override. */
+  frameWords?: Record<string, { meaning: string; optional?: boolean; words: FrameWordPick[] }>
 }
+
+/**
+ * One choice for a frame word slot. With `gloss`, a sense of `word` whose definition matches (region and
+ * labels from that sense); otherwise an override for what no definition says, with a `note`.
+ */
+export type FrameWordPick =
+  | { word: string; gloss: RegExp; when?: 'respect'; note?: string }
+  | { word: string; gloss?: undefined; regions?: string[]; labels?: string[]; when?: 'respect'; note: string }
 
 /**
  * One English meaning's hand-picked words. `word`, `pos` and `gloss` find the English sense (the build
