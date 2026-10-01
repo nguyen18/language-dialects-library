@@ -15,6 +15,7 @@ import {
   type StoredPronounRow,
   type WordShard,
 } from './types.ts'
+import { accentCombinations, segment as segmentUnits, syllablesByPlain, units } from './text.ts'
 
 export * from './types.ts'
 export * from './pos.ts'
@@ -81,6 +82,30 @@ export type PronounOptions = {
   exclude?: string[]
 }
 
+/** One word of a text, as the dictionary splits it (see Dictionary.segment). */
+export type WordSegment = {
+  /** The word as written; offsets are into the text in Unicode NFC form. */
+  text: string
+  start: number
+  end: number
+  /** The word's dictionary entries; empty for words the dictionary doesn't have (names, typos). */
+  entries: Entry[]
+}
+
+/** Another way to write a word with the same letters (see Dictionary.variants). */
+export type WordVariant = {
+  word: string
+  entries: Entry[]
+  /** Zipf frequency (see Entry.frequency), or the syllable's for one syllable; undefined when unknown. */
+  frequency?: number
+}
+
+// Accent forms tried per syllable: more for one syllable, fewer for longer words, where every
+// combination is looked up (at most MAX_VARIANT_COMBINATIONS).
+const VARIANT_FORMS_ONE_SYLLABLE = 12
+const VARIANT_FORMS_PER_SYLLABLE = 5
+const MAX_VARIANT_COMBINATIONS = 64
+
 export type Dictionary = {
   /** The language's name, regions, source, license and counts. */
   meta(): Promise<LanguageMeta>
@@ -105,6 +130,20 @@ export type Dictionary = {
   syllables(): Promise<Record<string, number>>
   /** The language's sentence frames and frame words, unfilled (see FramesData); empty without frames. */
   frames(): Promise<FramesData>
+  /**
+   * The text split into the language's words: at each point, the longest run of units (syllables or
+   * words, up to the checker's `maxWordUnits`, default 3) that's a headword, so Vietnamese "hôm nay" is one
+   * word ("today"), not "hôm" + "nay". Units join only across spaces. Units the dictionary doesn't know
+   * are words of their own with no entries. Punctuation isn't returned.
+   */
+  segment(text: string): Promise<WordSegment[]>
+  /**
+   * Other words written with the same letters but other accents, that the dictionary has, most common
+   * first: "muộn" → muốn, mượn, …; for words of several syllables, every syllable varies ("hom nay" →
+   * "hôm nay"). For languages written in syllables (with a syllable list); `[]` otherwise. The word
+   * itself isn't included.
+   */
+  variants(word: string, options?: { limit?: number }): Promise<WordVariant[]>
 }
 
 /**
@@ -162,14 +201,56 @@ export function createDictionary(options: DictionaryOptions): Dictionary {
     return m.shards[kind].includes(key) ? loadOnce<T>(`${kind}/${key}.json`) : null
   }
 
+  async function lookup(word: string): Promise<Entry[]> {
+    const w = word.trim()
+    const [m, data] = await Promise.all([meta(), shard<WordShard>('words', w)])
+    const stored = data?.[w] ?? data?.[w.toLowerCase()] ?? []
+    return stored.map((e) => ({ ...e, senses: e.senses.map((s) => fromStored(s, m.regions)) }))
+  }
+
+  const checker = async (): Promise<CheckerConfig> => {
+    const m = await meta()
+    return m.checker ? loadOnce<CheckerConfig>('checker.json') : {}
+  }
+
+  const syllables = async (): Promise<Record<string, number>> => {
+    const m = await meta()
+    return m.syllables ? loadOnce<Record<string, number>>('syllables.json') : {}
+  }
+
   return {
     meta,
+    lookup,
+    checker,
+    syllables,
 
-    async lookup(word) {
-      const w = word.trim()
-      const [m, data] = await Promise.all([meta(), shard<WordShard>('words', w)])
-      const stored = data?.[w] ?? data?.[w.toLowerCase()] ?? []
-      return stored.map((e) => ({ ...e, senses: e.senses.map((s) => fromStored(s, m.regions)) }))
+    async segment(input) {
+      const text = input.normalize('NFC')
+      const config = await checker()
+      const words = await segmentUnits(text, units(text), config.maxWordUnits ?? 3, lookup)
+      return words.map(({ text: t, start, end, entries }) => ({ text: t, start, end, entries }))
+    },
+
+    async variants(word, { limit = 5 } = {}) {
+      const list = await syllables()
+      if (!Object.keys(list).length) return []
+      const written = word.trim().normalize('NFC').toLowerCase()
+      const parts = written.split(/\s+/)
+      const combos = accentCombinations(parts, syllablesByPlain(list), {
+        perUnit: parts.length === 1 ? VARIANT_FORMS_ONE_SYLLABLE : VARIANT_FORMS_PER_SYLLABLE,
+        max: MAX_VARIANT_COMBINATIONS,
+      }).filter((c) => c !== written)
+      const found = await Promise.all(combos.map(async (c) => ({ word: c, entries: await lookup(c) })))
+      const frequency = (v: { word: string; entries: Entry[] }) => {
+        const known = v.entries.map((e) => e.frequency).filter((f): f is number => f !== undefined)
+        return known.length ? Math.max(...known) : parts.length === 1 ? list[v.word] || undefined : undefined
+      }
+      // Most common first; ties (and unknown frequencies) keep the order of more common syllable forms.
+      return found
+        .filter((v) => v.entries.length)
+        .map((v) => ({ ...v, frequency: frequency(v) }))
+        .sort((a, b) => (b.frequency ?? -1) - (a.frequency ?? -1))
+        .slice(0, limit)
     },
 
     async searchEnglish(term, { region, pos, exclude = DEFAULT_EXCLUDED_LABELS, limit = 10, allSenses = false } = {}) {
@@ -209,16 +290,6 @@ export function createDictionary(options: DictionaryOptions): Dictionary {
     async picks() {
       const m = await meta()
       return m.picks ? loadOnce<PickRow[]>('picks.json') : []
-    },
-
-    async checker() {
-      const m = await meta()
-      return m.checker ? loadOnce<CheckerConfig>('checker.json') : {}
-    },
-
-    async syllables() {
-      const m = await meta()
-      return m.syllables ? loadOnce<Record<string, number>>('syllables.json') : {}
     },
 
     async frames() {
