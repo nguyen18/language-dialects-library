@@ -111,44 +111,47 @@ The cases involving Spanish were removed with it. The held-out set has since bee
 
 ### `createChecker({ baseUrl?, load?, dictionary? })` → `checker.check(text, options)`
 
-Checks a learner's sentence in one language and returns issues with the exact place in the text, a short explanation and suggested fixes. It runs in the browser like the rest of the library: no API calls, no cost.
+A spellchecker for learners: it gives a correction for every word it can, with the exact place in the text and a short reason. Words written in the learner's own language (English by default) get the target-language word. Further checks (regions, pronouns, politeness) can be turned on. It runs in the browser like the rest of the library: no API calls, no cost.
 
 ```ts
 import { createChecker } from 'which-dialect'
 
 const checker = createChecker()
-const { text, issues } = await checker.check('Tôi muốn ăn thịt lợn và bắp khong?', {
-  lang: 'vi', region: 'Southern', listener: 'parent',
+const { text, issues, parts } = await checker.check('Toi muon an the ice cream but it was very expensive.', {
+  lang: 'vi', region: 'Southern',
 })
-// “Tôi”: Talking to your parents, say “con” for “I”, not “Tôi”.               → Con
-// “lợn”: “lợn” is Northern; in Southern Vietnamese, say “heo”.                → heo, cúi, ỉn
-// “khong”: “khong” isn't a Vietnamese syllable. Did you mean “không”, “khổng” or “khống”?
-// “khong”: Talking to your parents, end the sentence with “ạ” to sound polite. (suggestion)
+// Toi → Tôi · muon → muốn · an → ăn          (accents)
+// the → (left out: Vietnamese has no "the") · ice cream → kem · but → nhưng · it → nó
+// was → là · very → rất · expensive → mắc    (English words, in Southern Vietnamese)
 ```
 
 | Option | Meaning |
 |---|---|
-| `lang` | The text's language. |
-| `region` | The region the text should be in. Without it, words that don't fit the rest of the text's region are pointed out (*lợn*, Northern, next to *nha*, Southern). |
-| `listener` | Who you're talking to, as a [pronoun-table](#looking-words-up) row id (`'parent'`, `'teacher'`, `'friend'`, …): pronouns and polite endings are checked against it. |
-| `about` | Who you're talking about, for "he/she" and "they" pronouns. |
-| `speaker` | `'male'` or `'female'`, for pronouns that depend on it. |
-| `rules` | Turn checks off, e.g. `{ 'polite-ending': false }`. |
+| `lang` | The text's language (the target). |
+| `base` | The learner's own language, whose words get translated (default `'en'`). |
+| `region` | The region's words are used for translations (*expensive* → Southern *mắc*, Northern *đắt*), and the `dialect` check, when on, flags other regions' words. |
+| `register` | `'casual'` allows colloquial translations; otherwise plain ones come first. |
+| `rules` | Turn checks on or off. By default only `spelling` and `foreign-word` run; e.g. `{ dialect: true, 'pronoun-relationship': true }`. |
+| `listener`, `about`, `speaker` | For the pronoun and polite-ending checks: who you're talking to and about (pronoun-table row ids), and the speaker's gender. |
 
-Each issue has `rule`, `severity` (`'error'`: not a word of the language; `'warning'`: wrong for the chosen region or relationship; `'suggestion'`: often better), `start`/`end` (offsets into the returned `text`, the input in Unicode NFC form), `text`, `message` and `suggestions` (replacements for `text`, best first).
+The result has `text` (the input in Unicode NFC form), `issues` and `parts` (the text split by language). Each issue has `rule`, `severity` (`'error'`: not a word of the language; `'warning'`: probably wrong, or wrong for the region or relationship; `'suggestion'`: often better), `start`/`end` (offsets into `text`), `text`, `message` and `suggestions` (replacements for `text`, best first; `''` means leave it out).
 
-The checks:
+**On by default (the spellchecker):**
 
-- **`spelling`**: syllables that aren't in the language, with the accented forms they could be (*khong* → *không*). Plain-letter words with no accented form are left alone (names, foreign words). Languages written in syllables only (Vietnamese).
-- **`dialect`**: words whose main meaning is tagged for another region (*lợn* in Southern text → *heo*; *muỗng* in Northern → *thìa*; in English, US *apartment* in UK text → *flat*). Words with an untagged main meaning are never flagged (*má* is "cheek" everywhere).
+- **`spelling`**: syllables that aren't in the language get the accented forms they could be (*khong* → *không*); rare plain-letter words next to a far more common accented form too (*toi* → *tôi*, *hom* → *hôm*), and, in a sentence typed without accents, any more common accented form (*an* → *ăn*, *di* → *đi*; not *con* → *còn*, about as common). Names (capitalized mid-sentence), the language's listed pronouns (*tui*) and plain-letter words with no accented form (*email*) are left alone. Languages written in syllables only (Vietnamese).
+- **`foreign-word`**: words in the learner's own language get the target-language word, in the region and register (*market* → *chợ*, *ice cream* → *kem*). Phrases the base dictionary knows are translated as one, falling back to single words. Words the language has no word for are suggested to be left out (`leaveOut` in its checker settings: Vietnamese has no *the*, *a*, *an*). Which language each word is in comes from the two dictionaries: an English word that's Vietnamese only with accents added (*but*: *bút*) is English; Vietnamese typed without accents (*khong*) is Vietnamese; words that could be either (*an*, *tui*) follow their neighbors, leaning to the target language.
+
+**Opt-in (`rules`):**
+
+- **`dialect`**: words whose main meaning is tagged for another region (*lợn* in Southern text → *heo*; *muỗng* in Northern → *thìa*; in English, US *apartment* in UK text → *flat*). Without `region`, words that don't fit the rest of the text's region are pointed out. Words with an untagged main meaning are never flagged (*má* is "cheek" everywhere).
 - **`pronoun-relationship`**: pronouns that don't fit the listener (*tôi* to a parent → *con*; to a teacher → *em*).
 - **`pronoun-pair`**: "I" and "you" pronouns that never go together (*tao* goes with *mày*, not *bạn*), when no listener is given.
 - **`pronoun-consistency`**: switching words for the same person within one text (*tôi* in one sentence, *tui* in the next): keep the first.
 - **`polite-ending`**: a suggestion to end sentences with *ạ* when talking to parents, elders and teachers (not for exclamations).
 
-The checker only speaks up when it's confident, so **no issues means none of the checks found anything, not that the text is correct**. It doesn't check word order, classifiers or whether a sentence sounds natural yet. Only reliable pronouns are checked: kinship words like *con* (also "child", and a classifier in *con chó*) aren't, and *bạn* (also "friend") only gets suggestions.
+Corrections are word by word: they don't fix word order or grammar, so English translated word by word reads like English in Vietnamese words (*it was very expensive* → *nó là rất mắc*). Whole English sentences or clauses that follow a [sentence frame](#sentence-frames) get the frame's natural wording instead in the [journal review](#reviewing-journal-entries). The checker only speaks up when it's confident, so **no issues means none of the checks found anything, not that the text is correct**.
 
-**Every language uses the same checks.** They read only the language's data and its `checker` settings in `languages/<code>.ts` (how text splits into words, which pronouns are reliable, polite endings), so a check whose data a language doesn't have is skipped. A language without checker settings still gets the `dialect` check.
+**Every language uses the same checks.** They read only the language's data and its `checker` settings in `languages/<code>.ts` (how text splits into words, which pronouns are reliable, polite endings, words with no equivalent), so a check whose data a language doesn't have is skipped. A language without checker settings is read as space-separated words: English words in it are still translated, and the `dialect` check works.
 
 ## Sentence frames
 
@@ -166,13 +169,13 @@ await pb.match('Do you want coffee?', { lang: 'vi' })                         //
 await pb.matchFrames('Bạn có đi?', { lang: 'vi' })                            // → 'Bạn có đi không?' (missing "không")
 ```
 
-Options: `lang`, `region`, `listener` (a pronoun-table row id; without it, the neutral default row), `speaker`, `register` (`'casual'` allows colloquial words like Southern *hông*, *tui*). Content slots take English (translated for you, in the region) or `{ text }` in the language itself. `parts` says why each word was chosen, for highlighting. `matchFrames` recognizes a frame in a sentence in the language itself and returns the changes the frame suggests: a missing required word (*không*), a word from another region (*mô* in Southern text → *đâu*), missing accents in a frame position (*Toi* → *Tôi*), and, only when a listener is given, a pronoun that doesn't fit them.
+Options: `lang`, `region`, `listener` (a pronoun-table row id; without it, the neutral default row), `speaker`, `register` (`'casual'` allows colloquial words like Southern *hông*, *tui*). Content slots take English (translated for you, in the region) or `{ text }` in the language itself. `parts` says why each word was chosen, for highlighting. `matchFrames` recognizes a frame in a sentence in the language itself (the journal review uses it to list the frames a sentence follows) and returns the changes the frame would suggest: a missing required word (*không*), a word from another region (*mô* in Southern text → *đâu*), missing accents in a frame position (*Toi* → *Tôi*), and, only when a listener is given, a pronoun that doesn't fit them.
 
 The frames themselves are written once, in English, in [`languages/frames.ts`](languages/frames.ts) (34 so far: journal sentences, feelings, questions, requests, greetings). Each language says how it expresses them (`frames` in `languages/<code>.ts`), with pronoun slots (`{I}`, `{YOU}`, `{WE_INCL}`, …, filled from the pronoun table) and **frame words** for what changes by region (`frameWords`: Vietnamese `{WHERE}` *đâu* / Central *mô*, `{HOW}` Northern *thế nào* / *sao* / Central *răng*, `{SOFT}` Northern *nhé* / Central and Southern *nha*, `{Q_END}` *không* / Southern casual *hông*, `{POLITE}` *ạ* when speaking up). Each frame word comes from a dictionary definition, keeping its region and labels, or from an override with a note, like the pronoun table. A language without frames returns none.
 
 ## Reviewing journal entries
 
-`createReviewer().review(entry, { lang, base?, region?, listener?, speaker?, register? })` reviews an entry written in the target language, the learner's own language (`base`, default `'en'`), or a mix of both, and returns the corrected entry sentence by sentence:
+`createReviewer().review(entry, { lang, base?, region?, register?, checks?, listener?, speaker? })` reviews an entry written in the target language, the learner's own language (`base`, default `'en'`), or a mix of both, and returns the corrected entry, in the target language, sentence by sentence:
 
 ```ts
 import { createReviewer } from 'which-dialect'
@@ -182,20 +185,23 @@ const review = await createReviewer().review(
   { lang: 'vi', region: 'Southern' },
 )
 review.corrected
-// 'Hôm nay tôi đi chợ với má. Tôi muốn ăn thịt heo nhưng mắc quá. Ngày mai tôi đi lại không?'
+// 'Hôm nay tôi đi chợ với má. Tôi muốn ăn thịt lợn nhưng mắc quá. Ngày mai tui đi lại không?'
 review.sentences[1].changes
-// [{ from: 'but it was expensive', to: 'nhưng mắc quá', kind: 'frame', why: 'Sentence frame “but it was {quality}”' },
-//  { from: 'lợn', to: 'heo', kind: 'dialect', why: '“lợn” is Northern; in Southern Vietnamese, say “heo”.' }]
+// [{ from: 'but it was expensive', to: 'nhưng mắc quá', kind: 'frame', why: 'Sentence frame “but it was {quality}”' }]
+
+// With the regional and consistency checks on:
+await createReviewer().review(entry, { lang: 'vi', region: 'Southern', checks: { dialect: true, 'pronoun-consistency': true } })
+// 'Hôm nay tôi đi chợ với má. Tôi muốn ăn thịt heo nhưng mắc quá. Ngày mai tôi đi lại không?'
 ```
 
 For each sentence:
 
-1. **Each word is marked as the target or the base language** (`parts`), from the two dictionaries alone. Words that could be either (*an*, *to*) take their neighbors' language; an English word that's Vietnamese only with accents added (*but*: *bút*) stays English, while Vietnamese typed without accents (*khong*) stays Vietnamese.
-2. **Base-language parts are replaced:** a whole sentence or clause that follows a sentence frame is filled in (*but it was expensive* → *nhưng mắc quá*; *Where is the bathroom?* → *Phòng tắm ở đâu?*), and words or short phrases (up to 3 words) are translated in the region (*market* → *chợ*). Anything longer is left as written and listed in `unchecked`: the review doesn't guess.
-3. **The grammar checker runs on the whole entry**, so consistency checks see every sentence (*tôi* earlier, *tui* later). Its errors and warnings are applied (`changes`); its suggestions, like ending with *ạ*, are returned as `hints`.
-4. **The corrected sentence is checked against sentence frames** (*Bạn có đi chợ?* → *Bạn có đi chợ không?*), and the frames it follows are listed (`frames`), for suggesting patterns to reuse.
+1. **Each word is marked as the target or the base language** (`parts`), as in the checker's `foreign-word` check.
+2. **A whole base-language sentence or clause that follows a sentence frame is filled in** with the frame's wording (*but it was expensive* → *nhưng mắc quá*; *Where is the bathroom?* → *Phòng tắm ở đâu?*).
+3. **The checker runs on the whole entry**: by default the spellchecker, so every remaining English word gets its translation and every misspelled word its accents; `checks` turns on more (regions, pronouns, consistency across sentences, polite endings). Its errors and warnings are applied (`changes`); its suggestions, like ending with *ạ*, are returned as `hints`.
+4. **The frames the corrected sentence follows are listed** (`frames`), for suggesting patterns to reuse. Frames don't change the sentence.
 
-Each sentence has `original`, `parts`, `corrected`, `changes` (`{ from, to, why, kind }`), `hints`, `frames` (`{ id, en, text }`, the frame's English and its pattern) and `unchecked`. For a journal, leave `listener` out: people written about (*má*, *thầy*) aren't treated as the listener. Rules can't fix everything: scrambled word order, missing verbs, or English sentences no frame covers come back as written, and plain-letter words that are also Vietnamese words (*toi*, *di*) are only fixed when a sentence frame shows what they should be.
+Each sentence has `original`, `parts`, `corrected`, `changes` (`{ from, to, why, kind }`; `to` is `''` when a word is left out), `hints`, `frames` (`{ id, en, text }`, the frame's English and its pattern) and `unchecked` (English words with no translation, left as written). For a journal, leave `listener` out: people written about (*má*, *thầy*) aren't treated as the listener. Corrections are word by word except for frames: word order and grammar aren't fixed (*I am very happy* → *Tôi là rất mừng*).
 
 ## Looking words up
 

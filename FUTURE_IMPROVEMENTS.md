@@ -106,7 +106,14 @@ English bridge words with two meanings (*do* "To perform; to execute" → *tử 
 ## Grammar checker
 
 The first version (2026-10-01) checks spelling and accents, words from another region, pronouns against
-the listener, I/you pronoun pairs and polite endings. Next, roughly in order:
+the listener, I/you pronoun pairs and polite endings. Since the same day it's a **spellchecker by
+default** (spelling, and English words translated); the other checks are opt-in. Next, roughly in order:
+
+- **Word-by-word translation reads like English:** "it was very expensive" → *nó là rất mắc* (natural:
+  *mắc quá*). More clause frames ("it was {quality}" with intensifiers, "because …", "and then …") and
+  slot values translated word by word inside frames ("very happy") would cover common cases.
+- **Ambiguous accent-less words:** *ma*, *me*, *da* stay when the gap to *mà*, *mẹ*, *đã* is under 1.5
+  Zipf in accented text; context (frames, neighbors) could decide.
 
 - **Question forms:** *có … không?* for yes/no questions, *đã … chưa?* for "have you … yet". Needs a few
   patterns over the segmented words; every pattern needs correct sentences in the no-false-alarm test.

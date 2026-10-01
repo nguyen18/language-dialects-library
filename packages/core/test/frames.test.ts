@@ -97,22 +97,29 @@ describe('journal review (real data)', { skip: !built && 'build en and vi data f
 
   it('corrects a mixed English and Vietnamese entry', async () => {
     const entry = 'Hôm nay tôi đi market với má. Tôi muốn ăn thịt lợn but it was expensive. Ngày mai tui đi lại khong?'
+    // By default, the spellchecker: English words and accents; regional words and "tui" stay.
     const review = await reviewer.review(entry, { lang: 'vi', region: 'Southern' })
-    assert.equal(review.corrected, 'Hôm nay tôi đi chợ với má. Tôi muốn ăn thịt heo nhưng mắc quá. Ngày mai tôi đi lại không?')
-    const [first, second, third] = review.sentences
+    assert.equal(review.corrected, 'Hôm nay tôi đi chợ với má. Tôi muốn ăn thịt lợn nhưng mắc quá. Ngày mai tui đi lại không?')
+    const [first, second] = review.sentences
     assert.deepEqual(first.parts.map((p) => p.lang), ['vi', 'en', 'vi'])
-    assert.deepEqual(first.changes.map((c) => [c.from, c.to, c.kind]), [['market', 'chợ', 'translated']])
-    assert.deepEqual(second.changes.map((c) => c.kind).sort(), ['dialect', 'frame'])
-    assert.ok(third.changes.some((c) => c.kind === 'pronoun-consistency' && c.from === 'tui'))
+    assert.deepEqual(first.changes.map((c) => [c.from, c.to, c.kind]), [['market', 'chợ', 'foreign-word']])
+    assert.deepEqual(second.changes.map((c) => c.kind), ['frame'])
     assert.ok(first.frames.some((f) => f.id === 'today'))
+    // With the regional and consistency checks on.
+    const more = await reviewer.review(entry, { lang: 'vi', region: 'Southern', checks: { dialect: true, 'pronoun-consistency': true } })
+    assert.equal(more.corrected, 'Hôm nay tôi đi chợ với má. Tôi muốn ăn thịt heo nhưng mắc quá. Ngày mai tôi đi lại không?')
   })
 
-  it('fixes frame grammar and accents, and lists what it could not check', async () => {
-    const review = await reviewer.review('Bạn có đi chợ? Toi khong biet. The weather is nice today.', { lang: 'vi' })
-    assert.equal(review.sentences[0].corrected, 'Bạn có đi chợ không?')
-    assert.equal(review.sentences[1].corrected, 'Tôi không biết.')
-    assert.deepEqual(review.sentences[2].unchecked, ['The weather is nice today'])
-    assert.equal(review.sentences[2].corrected, 'The weather is nice today.')
+  it('corrects every word, leaves out "the", and lists frames without changing the sentence', async () => {
+    const review = await reviewer.review('Toi muon an the ice cream. Bạn có đi chợ? The weather is nice today.', { lang: 'vi' })
+    assert.equal(review.sentences[0].corrected, 'Tôi muốn ăn kem.')
+    assert.ok(review.sentences[0].changes.some((c) => c.from === 'the' && c.to === ''))
+    // Frames are listed, not applied: the sentence keeps its own wording.
+    assert.equal(review.sentences[1].corrected, 'Bạn có đi chợ?')
+    assert.ok(review.sentences[1].frames.some((f) => f.id === 'ask-yes-no'))
+    // A whole English sentence with no frame is translated word by word.
+    assert.deepEqual(review.sentences[2].unchecked, [])
+    assert.match(review.sentences[2].corrected, /^Thời tiết .* hôm nay\.$/)
   })
 
   // A correct entry must come back unchanged.

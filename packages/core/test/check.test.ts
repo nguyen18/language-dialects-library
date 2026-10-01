@@ -49,9 +49,14 @@ const files: Record<string, unknown> = {
   ...Object.fromEntries(Object.entries(words).map(([k, v]) => [`words/${k}.json`, v])),
 }
 
+// Every opt-in check on, for testing them (by default only the spellchecker runs).
+const ALL_CHECKS = { dialect: true, 'pronoun-relationship': true, 'pronoun-pair': true, 'pronoun-consistency': true, 'polite-ending': true }
+
 describe('checker (fake data)', () => {
   const checker = createChecker({ load: () => async (p) => files[p] })
-  const check = (text: string, options: Partial<Parameters<typeof checker.check>[1]> = {}) => checker.check(text, { lang: 'test', ...options })
+  // The fake language has no English data, so words aren't checked for being English (base = itself).
+  const check = (text: string, options: Partial<Parameters<typeof checker.check>[1]> = {}) =>
+    checker.check(text, { lang: 'test', base: 'test', ...options, rules: { ...ALL_CHECKS, ...options.rules } })
   const rules = async (text: string, options = {}) => (await check(text, options)).issues.map((i) => `${i.rule}:${i.text}`)
 
   it('joins syllables into dictionary words before checking them', async () => {
@@ -119,6 +124,11 @@ describe('checker (fake data)', () => {
     assert.deepEqual(await rules('tao an.', { listener: 'close' }), [])
   })
 
+  it('runs only the spellchecker unless other checks are turned on', async () => {
+    const { issues } = await checker.check('lon khong. toi an.', { lang: 'test', base: 'test', region: 'South', listener: 'parent' })
+    assert.deepEqual(issues.map((i) => i.rule), ['spelling'])
+  })
+
   it('reports offsets into the NFC text, and lets rules be turned off', async () => {
     const { text, issues } = await check('Ừ, khong an.')
     assert.ok(issues.every((i) => text.slice(i.start, i.end) === i.text))
@@ -132,7 +142,7 @@ describe('checker (fake data)', () => {
   it('still checks regions for a language without checker settings', async () => {
     const plainFiles: Record<string, unknown> = { ...files, 'meta.json': { ...meta, checker: false, syllables: false, pronouns: false } }
     const plain = createChecker({ load: () => async (p) => plainFiles[p] })
-    const issues = (await plain.check('khong lon', { lang: 'test', region: 'South' })).issues
+    const issues = (await plain.check('khong lon', { lang: 'test', base: 'test', region: 'South', rules: { dialect: true } })).issues
     assert.deepEqual(issues.map((i) => `${i.rule}:${i.text}`), ['dialect:lon'])
   })
 })
@@ -142,7 +152,32 @@ const root = join(dirname(fileURLToPath(import.meta.url)), '..', '..')
 const built = ['en', 'vi'].every((l) => existsSync(join(root, l, 'data')))
 describe('checker (real Vietnamese data)', { skip: !built && 'build en and vi data first' }, () => {
   const checker = createChecker({ load: (lang) => async (p) => JSON.parse(await readFile(join(root, lang, 'data', p), 'utf8')) })
-  const check = (text: string, options: Partial<Parameters<typeof checker.check>[1]> = {}) => checker.check(text, { lang: 'vi', ...options })
+  const check = (text: string, options: Partial<Parameters<typeof checker.check>[1]> = {}) =>
+    checker.check(text, { lang: 'vi', ...options, rules: { ...ALL_CHECKS, ...options.rules } })
+  // The default: the spellchecker only.
+  const spell = (text: string, options: Partial<Parameters<typeof checker.check>[1]> = {}) => checker.check(text, { lang: 'vi', ...options })
+  const fixes = async (text: string, options = {}) =>
+    (await spell(text, options)).issues.filter((i) => i.severity !== 'suggestion').map((i) => `${i.text}→${i.suggestions[0]}`)
+
+  it('corrects every word by default: accents, and English words translated', async () => {
+    assert.deepEqual(await fixes('Toi muon an the ice cream but it was very expensive.', { region: 'Southern' }), [
+      'Toi→Tôi', 'muon→muốn', 'an→ăn', 'the→', 'ice cream→kem', 'but→nhưng', 'it→nó', 'was→là', 'very→rất', 'expensive→mắc',
+    ])
+    assert.deepEqual(await fixes('Hôm nay tôi đi market.'), ['market→chợ'])
+    // The region's word: "expensive" is đắt in the North.
+    assert.deepEqual(await fixes('Nó expensive.', { region: 'Northern' }), ['expensive→đắt'])
+    // "but" is English here, not a misspelled "bút"; regions and pronouns aren't checked by default.
+    assert.deepEqual(await fixes('Tôi muốn ăn thịt lợn but tui không có tiền.', { region: 'Southern' }), ['but→nhưng'])
+    const { parts } = await spell('Hôm nay tôi đi market với má.')
+    assert.deepEqual(parts.map((p) => p.lang), ['vi', 'en', 'vi'])
+  })
+
+  it('suggests accents for rare plain-letter words, more readily in text typed without accents', async () => {
+    assert.deepEqual(await fixes('Toi đã ăn cơm.'), ['Toi→Tôi'])
+    assert.deepEqual(await fixes('toi di cho'), ['toi→tôi', 'di→đi'])
+    // Common plain words and listed pronouns stay ("cho", "con", Southern "tui").
+    assert.deepEqual(await fixes('Tui cho con ăn cơm.'), [])
+  })
 
   it('catches the common learner mistakes', async () => {
     const { issues } = await check('Tôi muốn ăn thịt lợn và bắp khong?', { region: 'Southern', listener: 'parent' })
@@ -174,8 +209,10 @@ describe('checker (real Vietnamese data)', { skip: !built && 'build en and vi da
       ['Mẹ ơi, con đói rồi ạ.', { region: 'Northern', listener: 'parent' }],
     ]
     for (const [text, options] of clean) {
-      const { issues } = await check(text, options)
-      assert.deepEqual(issues.map((i) => `${i.rule}: ${i.message}`), [], text)
+      for (const run of [check, spell]) {
+        const { issues } = await run(text, options)
+        assert.deepEqual(issues.map((i) => `${i.rule}: ${i.message}`), [], text)
+      }
     }
   })
 })

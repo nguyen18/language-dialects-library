@@ -128,6 +128,8 @@ const config: LanguageConfig = {
     ambiguousPronouns: ['bạn'],
     // Expected at the end of sentences said to parents, elders and teachers (rows marked respect).
     politeEndings: ['ạ'],
+    // English words Vietnamese has no word for: no articles, so they're left out, not translated.
+    leaveOut: ['the', 'a', 'an'],
   },
   // How to say "I", "you", "he/she", "we", plural "you" and "they" depending on who you're talking to
   // (or about). Picks with a `gloss` are pronoun definitions from the data ("you, my father"); rules are
@@ -399,6 +401,24 @@ const config: LanguageConfig = {
     {
       word: 'get', pos: 'verb', gloss: /^To obtain; to acquire/, picks: ['lấy'],
       note: '"được" is common mostly as a helper verb ("được đi"); "lấy" is the everyday word.',
+    },
+    // Small grammar words, for translating English words one by one (the checker's foreign-word check):
+    // without a pick, "but" is "song" (literary) from its first-listed meaning "except".
+    {
+      word: 'but', pos: 'conj', gloss: /^However, although, nevertheless/, picks: ['nhưng'], first: true,
+      note: 'The everyday "but"; Wiktionary\'s table for this meaning also says nhưng.',
+    },
+    {
+      word: 'be', pos: 'verb', gloss: /^Used to declare the subject and object identical or equivalent/, picks: ['là'], first: true,
+      note: '"is" on its own: "là" (X là Y), not the passive "bị" from its first-listed meaning.',
+    },
+    {
+      word: 'very', pos: 'adv', gloss: /^To a great extent or degree/, picks: ['rất'], first: true,
+      note: 'The neutral "very"; "quá" is closer to "so, too".',
+    },
+    {
+      word: 'of', pos: 'prep', gloss: /^Belonging to, existing in, or taking place in/, picks: ['của'], first: true,
+      note: 'Possession ("the book of my friend": sách của bạn tôi); the first-listed meanings are distance and separation.',
     },
   ],
 }
