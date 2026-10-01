@@ -36,6 +36,81 @@ const config: LanguageConfig = {
   keepWord: (word) => /[a-zA-ZÀ-ỹđĐ]/.test(word),
   // wordfreq only has a "small" Vietnamese list (the most common ~25k tokens, which are syllables).
   wordfreq: 'small',
+  // Sentence frames (the shared catalog is languages/frames.ts). Placeholders: the frame's content slots
+  // (lowercase), pronoun slots ({I}, {YOU}, {WE_INCL}: from the pronoun table for the listener) and frame
+  // word slots (uppercase, below), which carry the regional differences.
+  frames: [
+    { frame: 'today', text: 'Hôm nay {I} {action}.' },
+    { frame: 'yesterday', text: 'Hôm qua {I} {action}.' },
+    { frame: 'tomorrow', text: 'Ngày mai {I} sẽ {action}.' },
+    { frame: 'want-to', text: '{I} muốn {action}.' },
+    { frame: 'want', text: '{I} muốn {thing}.' },
+    { frame: 'like-to', text: '{I} thích {action}.' },
+    { frame: 'like', text: '{I} thích {thing}.' },
+    { frame: 'went-to', text: '{I} đã đi {place}.' },
+    { frame: 'have-to', text: '{I} phải {action}.' },
+    { frame: 'can', text: '{I} có thể {action}.' },
+    { frame: 'cannot', text: '{I} {NOT} thể {action}.' },
+    { frame: 'dont-know', text: '{I} {NOT} biết.' },
+    { frame: 'dont-understand', text: '{I} {NOT} hiểu.' },
+    { frame: 'feel', text: '{I} cảm thấy {quality}.' },
+    { frame: 'am', text: '{I} {quality}.' },
+    { frame: 'it-was', text: '{quality} quá.' },
+    { frame: 'but-it-was', text: 'nhưng {quality} quá' },
+    { frame: 'ask-where', text: '{place} ở {WHERE}?' },
+    { frame: 'ask-what', text: '{thing} là {WHAT}?' },
+    { frame: 'ask-how', text: '{thing} {HOW}?' },
+    { frame: 'ask-when', text: '{WHEN} {YOU} {action}?' },
+    { frame: 'ask-how-much', text: '{thing} bao nhiêu tiền?' },
+    { frame: 'ask-eaten', text: '{YOU} ăn cơm chưa {POLITE}?' },
+    { frame: 'ask-done', text: '{YOU} đã {action} chưa {POLITE}?' },
+    { frame: 'ask-want', text: '{YOU} có muốn {thing} {Q_END} {POLITE}?' },
+    { frame: 'ask-yes-no', text: '{YOU} có {action} {Q_END} {POLITE}?' },
+    { frame: 'help-me', text: '{YOU} giúp {I} được {Q_END} {POLITE}?' },
+    { frame: 'give-me', text: 'Cho {I} {thing} {POLITE}.' },
+    { frame: 'lets', text: '{WE_INCL} {action} {SOFT}.' },
+    { frame: 'hello', text: 'Chào {YOU} {POLITE}.' },
+    { frame: 'thanks', text: 'Cảm ơn {YOU} {POLITE}.' },
+    { frame: 'sorry', text: '{I} xin lỗi {YOU} {POLITE}.' },
+    { frame: 'goodbye', text: 'Hẹn gặp lại {YOU} {POLITE}.' },
+    { frame: 'good-night', text: 'Chúc {YOU} ngủ ngon {POLITE}.' },
+  ],
+  // The words that change by region or politeness. Choices for the user's region come first; casual ones
+  // (colloquial, informal) only with register: 'casual'.
+  frameWords: {
+    WHERE: { meaning: 'where', words: [
+      { word: 'đâu', gloss: /^where$/ },
+      { word: 'mô', gloss: /^where$/ },
+    ] },
+    WHAT: { meaning: 'what', words: [
+      { word: 'gì', gloss: /^what; whatever$/ },
+      { word: 'chi', gloss: /^what; whatever$/ },
+    ] },
+    HOW: { meaning: 'how', words: [
+      { word: 'thế nào', gloss: /^how; what; in what manner/ },
+      { word: 'sao', gloss: /^how$/ },
+      { word: 'răng', gloss: /^why; how; what$/ },
+    ] },
+    WHEN: { meaning: 'when', words: [
+      { word: 'khi nào', gloss: /^when$/ },
+      { word: 'chừng nào', regions: ['Southern'], labels: ['colloquial'], note: 'Southern casual "when"; Wiktionary labels it colloquial but gives no region.' },
+    ] },
+    NOT: { meaning: 'not', words: [
+      { word: 'không', gloss: /^Negates the meaning/ },
+      { word: 'hông', regions: ['Southern'], labels: ['colloquial'], note: 'Southern casual "không"; Wiktionary has it as a variant of không.' },
+    ] },
+    Q_END: { meaning: 'yes/no question ending', words: [
+      { word: 'không', gloss: /^Used to form polar questions/ },
+      { word: 'hông', regions: ['Southern'], labels: ['colloquial'], note: 'Southern casual "không"; Wiktionary has it as a variant of không.' },
+    ] },
+    SOFT: { meaning: 'friendly ending (okay?)', optional: true, words: [
+      { word: 'nhé', gloss: /^alright\?; okay\?; will you\?$/ },
+      { word: 'nha', gloss: /^alright\?; okay\?; will you\?$/ },
+    ] },
+    POLITE: { meaning: 'polite ending', optional: true, words: [
+      { word: 'ạ', gloss: /^Used at the end of the sentence to express formality or politeness/, when: 'respect' },
+    ] },
+  },
   // The grammar checker (see CheckerConfig). Vietnamese is written in syllables that group into words
   // ("thịt heo", "kết quả"); the longest common words are about 4 syllables.
   checker: {

@@ -95,7 +95,61 @@ export type LanguageMeta = {
   checker?: boolean
   /** true when the language has a syllable list (syllables.json: syllable → Zipf frequency, 0 when unknown). */
   syllables?: boolean
+  /** true when the language has sentence frames (frames.json, see FramesData). */
+  frames?: boolean
 }
+
+/**
+ * Pronoun slots in sentence frames ({I}, {YOU}, …) and the pronoun-table column each one fills from, for
+ * the listener (or the table's default row).
+ */
+export const FRAME_PRONOUNS: Record<string, { person: PronounPerson; inclusive?: boolean }> = {
+  I: { person: 'self' },
+  YOU: { person: 'addressee' },
+  WE: { person: 'selfPlural', inclusive: false },
+  WE_INCL: { person: 'selfPlural', inclusive: true },
+  YOU_PL: { person: 'addresseePlural' },
+  HE_SHE: { person: 'third' },
+  THEY: { person: 'thirdPlural' },
+}
+
+/**
+ * One choice for a frame word slot ({WHERE} → "đâu", "mô"): from a dictionary definition (region and
+ * labels from that sense) or a hand-written override with a note. `when: 'respect'` choices are used only
+ * when the listener's pronoun-table row is marked respect (Vietnamese "ạ").
+ */
+export type FrameWordChoice = {
+  word: string
+  gloss?: string
+  source: 'gloss' | 'override'
+  regions: string[]
+  regionTagged: boolean
+  labels: string[]
+  note?: string
+  when?: 'respect'
+}
+
+/** A frame word slot: what it means, whether a sentence is fine without it, and its choices in order. */
+export type FrameWords = { meaning: string; optional?: boolean; choices: FrameWordChoice[] }
+
+/**
+ * A sentence frame in one language: the catalog's id, topic, English ways to say it and slots, and this
+ * language's `text` with {slot} placeholders: content slots (lowercase, from `slots`), pronoun slots
+ * (FRAME_PRONOUNS) and frame word slots (uppercase, from FramesData.words).
+ */
+export type FrameData = {
+  id: string
+  topic: string
+  en: string[]
+  slots: Record<string, 'noun' | 'verb' | 'adj'>
+  clause?: boolean
+  text: string
+}
+
+export type FramesData = { frames: FrameData[]; words: Record<string, FrameWords> }
+
+export type StoredFrameWordChoice = Omit<FrameWordChoice, 'regions' | 'regionTagged' | 'labels'> & { regions?: string[]; labels?: string[] }
+export type StoredFramesData = { frames: FrameData[]; words: Record<string, Omit<FrameWords, 'choices'> & { choices: StoredFrameWordChoice[] }> }
 
 /**
  * How the checker reads one language (languages/<lang>.ts `checker`, stored as data/checker.json). Every

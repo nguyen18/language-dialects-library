@@ -121,7 +121,27 @@ the listener, I/you pronoun pairs and polite endings. Next, roughly in order:
   inflected forms (`regularBaseForms`), not a syllable list.
 - **Dictation text:** speech recognizers write standard spellings (*hông* → *không*), so don't treat
   missing Southern words in dictated text as the learner's mistake.
-- **"Does this sound natural?":** rules can't judge this; an optional, paid "ask the AI" button could.
+- **"Does this sound natural?":** rules can't judge this. The owner doesn't plan to use an LLM, so the
+  review stays rule-based: say plainly what wasn't checked and point to frames instead.
+
+## Sentence frames and journal review
+
+The first version (2026-10-01): 34 frames in `languages/frames.ts`, Vietnamese versions and frame words,
+`createPhrasebook` and `createReviewer`. Next, roughly in order:
+
+- **More frames, reviewed by a speaker:** draft candidates from the data (424 Vietnamese phrase entries,
+  ~9,800 example sentences with translations), like the picks sheet, and grow by how often learners need
+  them. Central forms (*mô*, *răng*, *chi*) especially need a speaker's check.
+- **Better content words in frames:** slots take the translator's first word, which is sometimes not the
+  everyday one (*bathroom* → *phòng tắm*, where people ask for *nhà vệ sinh*); hand-picked words would fix
+  the common ones.
+- **Possessives in slots:** "my mother" in a slot isn't translated (*mẹ tôi*); handle "my/your + noun".
+- **Longer English parts:** anything over 3 words that no frame covers is listed as unchecked. More frames
+  (and clause frames like "because …", "and then …") are the rule-based way to cover more.
+- **Ambiguous accent-less words:** *toi*, *di*, *cho* are real words without accents, so they're only fixed
+  when a frame shows what they should be; frames covering more journal sentences help here too.
+- **Talking to someone in a journal:** an entry that addresses someone ("Mẹ ơi, …") could set the listener
+  for that sentence.
 
 ## Pronouns
 

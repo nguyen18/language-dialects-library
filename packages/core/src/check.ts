@@ -10,6 +10,7 @@
 // the checks found anything, not that the text is correct.
 
 import { createDictionary, resolveRegion, type Dictionary } from './index.ts'
+import { joined, matchCase, plain, segment, sentencesOf, units, type Unit, type Word } from './text.ts'
 import { createTranslator, type TranslatorOptions } from './translate.ts'
 import {
   PRONOUN_PERSONS,
@@ -20,7 +21,7 @@ import {
   type PronounRow,
 } from './types.ts'
 
-export type CheckRule = 'spelling' | 'dialect' | 'pronoun-relationship' | 'pronoun-pair' | 'polite-ending'
+export type CheckRule = 'spelling' | 'dialect' | 'pronoun-relationship' | 'pronoun-pair' | 'pronoun-consistency' | 'polite-ending'
 
 export type CheckIssue = {
   rule: CheckRule
@@ -78,12 +79,6 @@ const ABOUT_PERSONS = new Set<PronounPerson>(['third', 'thirdPlural'])
 const SELF_PERSONS = new Set<PronounPerson>(['self', 'selfPlural'])
 const ADDRESSEE_PERSONS = new Set<PronounPerson>(['addressee', 'addresseePlural'])
 
-// A run of letters (with their accents), digits and apostrophes: a word, or a syllable in syllable languages.
-const UNIT = /[\p{L}\p{M}\p{N}'’]+/gu
-const SENTENCE_END = /[.!?…]+|\n+/g
-
-type Unit = { text: string; start: number; end: number }
-type Word = { text: string; lower: string; start: number; end: number; units: Unit[]; entries: Entry[] }
 type Sentence = { units: Unit[]; words: Word[] }
 type PronounMatch = { text: string; lower: string; start: number; end: number; person: PronounPerson; sentence: number }
 
@@ -103,58 +98,7 @@ const quote = (s: string) => `“${s}”`
 const lowerFirst = (s: string) => s.charAt(0).toLowerCase() + s.slice(1)
 const listOf = (items: string[], conjunction = 'and') =>
   items.length <= 1 ? items.join('') : `${items.slice(0, -1).join(', ')} ${conjunction} ${items[items.length - 1]}`
-// Keeps a capital first letter when replacing a capitalized word ("Tôi" → "Con").
-const matchCase = (original: string, replacement: string) =>
-  original.charAt(0) !== original.charAt(0).toLowerCase() ? replacement.charAt(0).toUpperCase() + replacement.slice(1) : replacement
-// Without accents, for finding the accented forms of a syllable: "không" → "khong", "đi" → "di".
-const plain = (s: string) => s.normalize('NFD').replace(/\p{M}/gu, '').replace(/đ/g, 'd').replace(/Đ/g, 'D').normalize('NFC')
 const unique = <T>(items: T[]) => [...new Set(items)]
-
-function units(text: string): Unit[] {
-  return [...text.matchAll(UNIT)].map((m) => ({ text: m[0], start: m.index!, end: m.index! + m[0].length }))
-}
-
-function sentencesOf(text: string, all: Unit[]): Unit[][] {
-  const ends = [...text.matchAll(SENTENCE_END)].map((m) => m.index!)
-  const out: Unit[][] = [[]]
-  let next = 0
-  for (const u of all) {
-    while (next < ends.length && ends[next] < u.start) {
-      if (out[out.length - 1].length) out.push([])
-      next++
-    }
-    out[out.length - 1].push(u)
-  }
-  return out.filter((s) => s.length)
-}
-
-// Units join into one word only when just spaces separate them ("thịt heo", not "thịt, heo").
-const joined = (text: string, a: Unit, b: Unit) => /^[^\S\n]+$/.test(text.slice(a.end, b.start))
-
-// Longest match against the dictionary: at each position, the longest run of units that's a headword
-// ("kết quả" is one word, so its "quả" isn't checked on its own). Unknown single units become words with
-// no entries.
-async function segment(text: string, list: Unit[], maxUnits: number, lookup: (phrase: string) => Promise<Entry[]>) {
-  const words: Word[] = []
-  for (let i = 0; i < list.length; ) {
-    let taken: Word | null = null
-    for (let k = Math.min(maxUnits, list.length - i); k >= 1; k--) {
-      const span = list.slice(i, i + k)
-      if (span.some((u, j) => j > 0 && !joined(text, span[j - 1], u))) continue
-      const phrase = span.map((u) => u.text).join(' ')
-      const entries = /\d/.test(phrase) ? [] : await lookup(phrase)
-      if (entries.length || k === 1) {
-        const start = span[0].start
-        const end = span[k - 1].end
-        taken = { text: text.slice(start, end), lower: phrase.toLowerCase(), start, end, units: span, entries }
-        break
-      }
-    }
-    words.push(taken!)
-    i += taken!.units.length
-  }
-  return words
-}
 
 // --- Rules -----------------------------------------------------------------------------------------------
 
@@ -311,6 +255,33 @@ async function pronounPair(ctx: Context): Promise<CheckIssue[]> {
   return issues
 }
 
+// Switching words for the same person within one text ("tôi" in one sentence, "tui" in the next): the first
+// one used is kept. Useful for journals and longer messages. Ambiguous pronouns ("bạn": also "friend") are
+// never the ones flagged as a warning.
+async function pronounConsistency(ctx: Context): Promise<CheckIssue[]> {
+  const first = new Map<PronounPerson, PronounMatch>()
+  const issues: CheckIssue[] = []
+  for (const m of ctx.pronounMatches()) {
+    const earlier = first.get(m.person)
+    if (!earlier) {
+      first.set(m.person, m)
+      continue
+    }
+    if (earlier.lower === m.lower) continue
+    const ambiguous = ctx.config.ambiguousPronouns?.includes(m.lower) || ctx.config.ambiguousPronouns?.includes(earlier.lower)
+    issues.push({
+      rule: 'pronoun-consistency',
+      severity: ambiguous ? 'suggestion' : 'warning',
+      start: m.start,
+      end: m.end,
+      text: m.text,
+      message: `You used ${quote(earlier.text)} for “${PERSON_NAMES[m.person]}” earlier; keep one word: ${quote(earlier.lower)}.`,
+      suggestions: [matchCase(m.text, earlier.lower)],
+    })
+  }
+  return issues
+}
+
 // Polite endings when speaking up (the listener's row is marked `respect`): Vietnamese sentences to parents,
 // elders and teachers usually end in "ạ". A suggestion, not an error: it isn't always needed.
 async function politeEnding(ctx: Context): Promise<CheckIssue[]> {
@@ -342,6 +313,7 @@ const RULES: Record<CheckRule, (ctx: Context) => Promise<CheckIssue[]>> = {
   dialect,
   'pronoun-relationship': pronounRelationship,
   'pronoun-pair': pronounPair,
+  'pronoun-consistency': pronounConsistency,
   'polite-ending': politeEnding,
 }
 

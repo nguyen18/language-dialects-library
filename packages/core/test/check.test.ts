@@ -105,6 +105,13 @@ describe('checker (fake data)', () => {
     assert.deepEqual(await rules('toi ban'), [])
   })
 
+  it('flags switching words for the same person within one text', async () => {
+    const [issue] = (await check('toi an. tao an.')).issues.filter((i) => i.rule === 'pronoun-consistency')
+    assert.equal(issue.text, 'tao')
+    assert.deepEqual(issue.suggestions, ['toi'])
+    assert.deepEqual((await check('toi an. toi an.')).issues.filter((i) => i.rule === 'pronoun-consistency'), [])
+  })
+
   it('suggests polite endings when speaking up, except in exclamations', async () => {
     assert.deepEqual(await rules('con an.', { listener: 'parent' }), ['polite-ending:an'])
     assert.deepEqual(await rules('con an a.', { listener: 'parent' }), [])
