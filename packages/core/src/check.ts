@@ -12,7 +12,7 @@
 // the checks found anything, not that the text is correct.
 
 import { createDictionary, resolveRegion, type Dictionary } from './index.ts'
-import { joined, matchCase, plain, segment, sentencesOf, units, type Unit, type Word } from './text.ts'
+import { accentCombinations, joined, matchCase, plain, segment, sentencesOf, syllablesByPlain, units, type Unit, type Word } from './text.ts'
 import { markLanguages } from './detect.ts'
 import { createTranslator, type Translator, type TranslatorOptions } from './translate.ts'
 import {
@@ -155,17 +155,21 @@ const unique = <T>(items: T[]) => [...new Set(items)]
 //   because filled-in sentence frames add accented words), any accented form that's more common
 //   counts ("an" → "ăn"; but not "con" → "còn", about as common). Left alone: capitalized words
 //   mid-sentence (names) and the language's listed pronouns, some written without accents ("tui").
+// First, a doubtful syllable (one of the above) is tried with its neighbors: when fixing its accents makes a
+// dictionary word with them, that word is suggested for the run ("hom nay" → "hôm nay", not "hôm này").
 // Units inside a known word, or in the learner's own language, aren't checked.
 // Zipf points by which an accented form must be more common than a plain-letter word to be suggested.
 const ACCENTS_GAP = 1.5
 const ACCENTS_GAP_UNACCENTED_TEXT = 0.2
+// Accent forms tried per doubtful syllable when looking for a word with its neighbors, and how many
+// combinations are looked up at most.
+const COMPOUND_FORMS_PER_SYLLABLE = 5
+const COMPOUND_MAX_COMBINATIONS = 64
 
 async function spelling(ctx: Context): Promise<CheckIssue[]> {
   if (ctx.config.units !== 'syllables' || !ctx.meta.syllables) return []
   const syllables = await ctx.dict.syllables()
-  const byPlain = new Map<string, string[]>()
-  for (const s of Object.keys(syllables)) byPlain.set(plain(s), [...(byPlain.get(plain(s)) ?? []), s])
-  for (const list of byPlain.values()) list.sort((a, b) => syllables[b] - syllables[a])
+  const byPlain = syllablesByPlain(syllables)
   const issues: CheckIssue[] = []
   const suggest = (u: Unit, candidates: string[], severity: CheckIssue['severity'], message: string) =>
     issues.push({ rule: 'spelling', severity, start: u.start, end: u.end, text: u.text, message, suggestions: candidates.map((c) => matchCase(u.text, c)) })
@@ -175,37 +179,83 @@ async function spelling(ctx: Context): Promise<CheckIssue[]> {
   for (const sentence of ctx.sentences) {
     const lone = sentence.words.filter((w) => !w.entries.length || w.units.length === 1).flatMap((w) => w.units).filter((u) => !ctx.inBase(u))
     const target = sentence.units.filter((u) => !ctx.inBase(u) && /\p{L}/u.test(u.text))
-    const mostlyPlain = target.filter((u) => u.text.toLowerCase() === plain(u.text.toLowerCase())).length >= target.length * 0.5
-    let missingAccents = false
-    const rare: Unit[] = []
-    for (const u of lone) {
-      const lower = u.text.toLowerCase().replace(/[’']/g, '')
-      if (/\d/.test(lower)) continue
-      const inWord = sentence.words.some((w) => w.entries.length && w.units.length > 1 && w.units.includes(u))
-      if (inWord) continue
-      if (!(lower in syllables)) {
+    const isPlain = (u: Unit) => u.text.toLowerCase() === plain(u.text.toLowerCase())
+    const mostlyPlain = target.filter(isPlain).length >= target.length * 0.5
+    const lowerOf = (u: Unit) => u.text.toLowerCase().replace(/[’']/g, '')
+    const inWord = (u: Unit) => sentence.words.some((w) => w.entries.length && w.units.length > 1 && w.units.includes(u))
+    // What each lone unit is: not a syllable of the language (with forms it could be), or a plain-letter
+    // syllable that could be missing its accents.
+    const checked = lone.filter((u) => !/\d/.test(lowerOf(u)) && !inWord(u))
+    const unknown = new Set(checked.filter((u) => !(lowerOf(u) in syllables) && ((byPlain.get(plain(lowerOf(u))) ?? []).length || !isPlain(u))))
+    const plainWords = new Set(checked.filter((u) => {
+      const lower = lowerOf(u)
+      return lower in syllables && lower === plain(lower) && !pronouns.has(lower) && (u === sentence.units[0] || !/\p{Lu}/u.test(u.text.charAt(0)))
+    }))
+    const missingAccents = [...unknown].some(isPlain)
+    // Typed without accents: mostly plain letters, and an accent error already, or 3+ words with no accent at all.
+    const unaccented = mostlyPlain && (missingAccents || (target.length >= 3 && target.every(isPlain)))
+    const gap = unaccented ? ACCENTS_GAP_UNACCENTED_TEXT : ACCENTS_GAP
+    const betterForms = (u: Unit) => {
+      const lower = lowerOf(u)
+      return (byPlain.get(lower) ?? []).filter((c) => c !== lower && syllables[c] >= syllables[lower] + gap - 1e-9).slice(0, 3)
+    }
+    const suspect = (u: Unit) => unknown.has(u) || (plainWords.has(u) && betterForms(u).length > 0)
+
+    // First, runs of syllables with a doubtful one that make a word once their accents are fixed: "hom nay"
+    // → "hôm nay", "an com" → "ăn cơm", "hôm nây" → "hôm nay". Only the doubtful syllables change. The word
+    // decides between forms a syllable alone can't ("nay" alone could be này, nảy…).
+    const covered = new Set<Unit>()
+    const loneSet = new Set(checked)
+    const maxUnits = ctx.config.maxWordUnits ?? 3
+    for (let i = 0; i < sentence.units.length; i++) {
+      for (let k = Math.min(maxUnits, sentence.units.length - i); k >= 2; k--) {
+        const span = sentence.units.slice(i, i + k)
+        if (span.some((u, j) => !loneSet.has(u) || covered.has(u) || (j > 0 && !joined(ctx.text, span[j - 1], u)))) continue
+        if (!span.some(suspect)) continue
+        const written = span.map(lowerOf)
+        const combos = accentCombinations(written, byPlain, {
+          fixed: span.map((u) => !suspect(u)),
+          perUnit: COMPOUND_FORMS_PER_SYLLABLE,
+          max: COMPOUND_MAX_COMBINATIONS,
+        }).filter((c) => c !== written.join(' '))
+        const found = (await Promise.all(combos.map(async (c) => ({ word: c, entries: await ctx.dict.lookup(c) }))))
+          .filter((f) => f.entries.length)
+          .map((f) => ({ word: f.word, frequency: Math.max(-1, ...f.entries.map((e) => e.frequency ?? -1)) }))
+          .sort((a, b) => b.frequency - a.frequency)
+          .slice(0, 3)
+        if (!found.length) continue
+        const at = { start: span[0].start, end: span[k - 1].end, text: ctx.text.slice(span[0].start, span[k - 1].end) }
+        const suggestions = found.map((f) => matchCase(at.text, f.word))
+        const quoted = listOf(suggestions.map(quote), 'or')
+        issues.push({
+          rule: 'spelling', severity: 'warning', ...at, suggestions,
+          message: span.filter(suspect).every(isPlain)
+            ? `${quote(at.text)} looks typed without accents. Did you mean ${quoted}?`
+            : `${quote(at.text)} isn't spelled right. Did you mean ${quoted}?`,
+        })
+        span.forEach((u) => covered.add(u))
+        break
+      }
+    }
+
+    // Then each remaining syllable on its own.
+    for (const u of checked) {
+      if (covered.has(u)) continue
+      const lower = lowerOf(u)
+      if (unknown.has(u)) {
         const candidates = (byPlain.get(plain(lower)) ?? []).slice(0, 3)
-        const accented = lower !== plain(lower)
-        if (!candidates.length && !accented) continue
-        if (!accented) missingAccents = true
+        const accented = !isPlain(u)
         // Missing accents on plain letters is the common learner slip; a wrong accent is more surely wrong.
         suggest(u, candidates, accented ? 'error' : 'warning', candidates.length
           ? `${quote(u.text)} isn't a ${ctx.meta.name} syllable. Did you mean ${options(u, candidates)}?`
           : `${quote(u.text)} isn't a ${ctx.meta.name} syllable. Check the spelling and accents.`)
-      } else if (lower === plain(lower) && !pronouns.has(lower) && (u === sentence.units[0] || !/\p{Lu}/u.test(u.text.charAt(0)))) {
-        rare.push(u)
+      } else if (plainWords.has(u)) {
+        const better = betterForms(u)
+        if (!better.length) continue
+        suggest(u, better, 'warning', unaccented
+          ? `${quote(u.text)} looks typed without accents. Did you mean ${options(u, better)}?`
+          : `${quote(u.text)} is a rare word; did you mean ${options(u, better)}?`)
       }
-    }
-    // Typed without accents: mostly plain letters, and an accent error already, or 3+ words with no accent at all.
-    const unaccented = mostlyPlain && (missingAccents || (target.length >= 3 && target.every((u) => u.text.toLowerCase() === plain(u.text.toLowerCase()))))
-    for (const u of rare) {
-      const lower = u.text.toLowerCase()
-      const gap = unaccented ? ACCENTS_GAP_UNACCENTED_TEXT : ACCENTS_GAP
-      const better = (byPlain.get(lower) ?? []).filter((c) => c !== lower && syllables[c] >= syllables[lower] + gap - 1e-9).slice(0, 3)
-      if (!better.length) continue
-      suggest(u, better, 'warning', unaccented
-        ? `${quote(u.text)} looks typed without accents. Did you mean ${options(u, better)}?`
-        : `${quote(u.text)} is a rare word; did you mean ${options(u, better)}?`)
     }
   }
   return issues

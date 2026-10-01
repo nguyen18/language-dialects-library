@@ -66,3 +66,47 @@ export const plain = (s: string) => s.normalize('NFD').replace(/\p{M}/gu, '').re
 /** Keeps a capital first letter when replacing a capitalized word ("Tôi" → "Con"). */
 export const matchCase = (original: string, replacement: string) =>
   original.charAt(0) !== original.charAt(0).toLowerCase() ? replacement.charAt(0).toUpperCase() + replacement.slice(1) : replacement
+
+// Syllables grouped by their plain form, most common first: "khong" → ["không", "khống", …]. Built once
+// per syllable list.
+const byPlainCache = new WeakMap<Record<string, number>, Map<string, string[]>>()
+
+/** A language's syllables grouped by their form without accents, most common first. */
+export function syllablesByPlain(syllables: Record<string, number>): Map<string, string[]> {
+  let byPlain = byPlainCache.get(syllables)
+  if (!byPlain) {
+    byPlain = new Map()
+    for (const s of Object.keys(syllables)) byPlain.set(plain(s), [...(byPlain.get(plain(s)) ?? []), s])
+    for (const list of byPlain.values()) list.sort((a, b) => syllables[b] - syllables[a])
+    byPlainCache.set(syllables, byPlain)
+  }
+  return byPlain
+}
+
+/**
+ * Ways to write a run of syllables with other accents ("hom nay" → "hôm nay", "hơm nay", …): each
+ * syllable's forms that share its letters (the most common `perUnit`, plus the syllable as written), in
+ * every combination, the ones made of more common forms first, at most `max`. Syllables that mustn't
+ * change (`fixed[i]`) keep their written form. The written run itself is included.
+ */
+export function accentCombinations(
+  written: string[],
+  byPlain: Map<string, string[]>,
+  { fixed = [], perUnit, max }: { fixed?: boolean[]; perUnit: number; max: number },
+): string[] {
+  const choices = written.map((w, i) => {
+    const lower = w.toLowerCase()
+    if (fixed[i]) return [lower]
+    const forms = (byPlain.get(plain(lower)) ?? []).slice(0, perUnit)
+    return forms.includes(lower) ? forms : [...forms, lower]
+  })
+  // Every combination with the sum of its forms' ranks: lower sums are made of more common forms.
+  let combos: { words: string[]; rank: number }[] = [{ words: [], rank: 0 }]
+  for (const options of choices) {
+    combos = combos.flatMap((c) => options.map((o, r) => ({ words: [...c.words, o], rank: c.rank + r })))
+  }
+  return combos
+    .sort((a, b) => a.rank - b.rank)
+    .slice(0, max)
+    .map((c) => c.words.join(' '))
+}

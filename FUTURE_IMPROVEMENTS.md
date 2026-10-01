@@ -113,7 +113,9 @@ default** (spelling, and English words translated); the other checks are opt-in.
   *mắc quá*). More clause frames ("it was {quality}" with intensifiers, "because …", "and then …") and
   slot values translated word by word inside frames ("very happy") would cover common cases.
 - **Ambiguous accent-less words:** *ma*, *me*, *da* stay when the gap to *mà*, *mẹ*, *đã* is under 1.5
-  Zipf in accented text; context (frames, neighbors) could decide.
+  Zipf in accented text; context could decide. Neighbors decide since 2026-10-01 when the run is a
+  dictionary word (*hom nay* → *hôm nay*); phrases that aren't headwords (*đi chợ*, *với má*) would need
+  bigram frequencies or frames.
 
 - **Question forms:** *có … không?* for yes/no questions, *đã … chưa?* for "have you … yet". Needs a few
   patterns over the segmented words; every pattern needs correct sentences in the no-false-alarm test.

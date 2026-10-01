@@ -4,7 +4,7 @@ import { readFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { describe, it } from 'node:test'
 import { fileURLToPath } from 'node:url'
-import { createChecker, type CheckerConfig, type LanguageMeta, type StoredEntry, type StoredPronounRow } from '../src/index.ts'
+import { createChecker, createDictionary, type CheckerConfig, type LanguageMeta, type StoredEntry, type StoredPronounRow } from '../src/index.ts'
 
 // A tiny fake language written in syllables, to test each rule without the real data. Regions North and
 // South; "lon" is North's word for pig and "heo" South's; "ket qua" is one word ("result"), while "qua"
@@ -23,6 +23,9 @@ const words: Record<string, Record<string, StoredEntry[]>> = {
   ma: { may: [pron('you')], ma: [pron('you, my mother')] },
   co: { con: [pron('I, to a parent'), noun('child')] },
   a_: { a: [noun('polite ending')] },
+  // "hôm nay" ("today") is one word; "nay" alone isn't in the dictionary, but "này" ("this") is.
+  ho: { 'hôm nay': [noun('today')] },
+  na: { 'này': [noun('this')] },
 }
 const rows: StoredPronounRow[] = [
   { id: 'general', label: 'Anyone', default: true, self: [{ word: 'toi', source: 'gloss' }], addressee: [{ word: 'ban', source: 'gloss' }] },
@@ -36,7 +39,10 @@ const checkerConfig: CheckerConfig = {
   ambiguousPronouns: ['ban'],
   politeEndings: ['a'],
 }
-const syllables = { lon: 5, heo: 5, ket: 4, qua: 5, an: 6, toi: 6, tao: 4, ban: 6, may: 4, ma: 5, con: 6, a: 5, 'không': 7, 'khống': 4 }
+const syllables = {
+  lon: 5, heo: 5, ket: 4, qua: 5, an: 6, toi: 6, tao: 4, ban: 6, may: 4, ma: 5, con: 6, a: 5, 'không': 7, 'khống': 4,
+  'hôm': 5, hom: 2, nay: 5, 'này': 6,
+}
 const meta = {
   name: 'Test', regions: ['North', 'South'], shards: { words: Object.keys(words), en: [] },
   pronouns: true, checker: true, syllables: true,
@@ -76,6 +82,17 @@ describe('checker (fake data)', () => {
     assert.equal(wrong.severity, 'error')
     // Plain-letter syllables with no accented form are left alone (names, foreign words).
     assert.deepEqual(await rules('email an'), [])
+  })
+
+  it('fixes the accents of a doubtful syllable by the word it makes with its neighbors', async () => {
+    // "hom" is rare next to "hôm"; with "nay" it makes "hôm nay", and only "hom" changes.
+    const [issue] = (await check('Hom nay an')).issues
+    assert.deepEqual([issue.rule, issue.text, issue.suggestions], ['spelling', 'Hom nay', ['Hôm nay']])
+    assert.match(issue.message, /typed without accents/)
+    // A syllable that isn't in the language is fixed the same way.
+    assert.deepEqual((await check('hôm nây')).issues.map((i) => `${i.text}→${i.suggestions[0]}`), ['hôm nây→hôm nay'])
+    // Syllables that are fine stay as written: "nay" alone isn't changed to "này".
+    assert.deepEqual(await rules('nay an'), [])
   })
 
   it('flags words from another region, or mixed regions when none is given', async () => {
@@ -139,6 +156,17 @@ describe('checker (fake data)', () => {
     await assert.rejects(check('toi', { listener: 'boss' }), /unknown listener "boss".*general, parent, close/)
   })
 
+  it('splits text into words and finds other accents of a word', async () => {
+    const dict = createDictionary({ lang: 'test', load: async (p) => files[p] })
+    assert.deepEqual((await dict.segment('Hôm nay, ket qua an.')).map((w) => [w.text, w.entries.length > 0]), [
+      ['Hôm nay', true], ['ket qua', true], ['an', true],
+    ])
+    assert.deepEqual((await dict.variants('hom nay')).map((v) => v.word), ['hôm nay'])
+    // Only words the dictionary has, and not the word itself.
+    assert.deepEqual((await dict.variants('nay')).map((v) => v.word), ['này'])
+    assert.deepEqual(await dict.variants('này'), [])
+  })
+
   it('still checks regions for a language without checker settings', async () => {
     const plainFiles: Record<string, unknown> = { ...files, 'meta.json': { ...meta, checker: false, syllables: false, pronouns: false } }
     const plain = createChecker({ load: () => async (p) => plainFiles[p] })
@@ -177,6 +205,20 @@ describe('checker (real Vietnamese data)', { skip: !built && 'build en and vi da
     assert.deepEqual(await fixes('toi di cho'), ['toi→tôi', 'di→đi'])
     // Common plain words and listed pronouns stay ("cho", "con", Southern "tui").
     assert.deepEqual(await fixes('Tui cho con ăn cơm.'), [])
+  })
+
+  it('fixes accents by the word a syllable makes with its neighbors', async () => {
+    // Alone, "nay" would become "này" ("this"); with "hom" it's "hôm nay" ("today").
+    assert.deepEqual(await fixes('Hom nay toi di cho.'), ['Hom nay→Hôm nay', 'toi→tôi', 'di→đi'])
+    assert.deepEqual(await fixes('Chung toi se di Ha Noi.'), ['Chung toi→Chúng tôi', 'se→sẽ', 'di→đi'])
+    assert.deepEqual(await fixes('Toi an com voi ma.'), ['Toi→Tôi', 'an com→ăn cơm', 'voi→với', 'ma→mà'])
+  })
+
+  it('splits text into words, and finds other accents of a word', async () => {
+    const vi = createDictionary({ lang: 'vi', load: async (p) => JSON.parse(await readFile(join(root, 'vi', 'data', p), 'utf8')) })
+    assert.deepEqual((await vi.segment('Hôm nay tôi ăn cơm.')).map((w) => w.text), ['Hôm nay', 'tôi', 'ăn cơm'])
+    assert.equal((await vi.variants('hom nay'))[0]?.word, 'hôm nay')
+    assert.deepEqual((await vi.variants('muộn', { limit: 3 })).map((v) => v.word), ['muốn', 'mượn', 'muôn'])
   })
 
   it('catches the common learner mistakes', async () => {
