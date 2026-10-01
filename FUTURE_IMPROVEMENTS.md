@@ -103,6 +103,26 @@ for obtain) and affects every common English word (*run*, *take*, *make*, *go*, 
 **Suggested approach:** revisit with the top-100 comparison, alone and after picks exist. Related noise:
 English bridge words with two meanings (*do* "To perform; to execute" → *tử hình*, execute = put to death).
 
+## Grammar checker
+
+The first version (2026-10-01) checks spelling and accents, words from another region, pronouns against
+the listener, I/you pronoun pairs and polite endings. Next, roughly in order:
+
+- **Question forms:** *có … không?* for yes/no questions, *đã … chưa?* for "have you … yet". Needs a few
+  patterns over the segmented words; every pattern needs correct sentences in the no-false-alarm test.
+- **Polite starts:** *dạ*, *vâng* at the start of a reply also count as polite (today only the ending *ạ*).
+- **Word order:** noun before adjective (*xe đỏ*, not *đỏ xe*). Needs each word's part of speech in
+  context, and Vietnamese words often have several; only flag clear cases.
+- **Classifiers:** *con chó*, *cái bàn*, *chiếc xe*. Needs a noun → classifier list; check whether
+  Kaikki's Vietnamese data has classifiers before hand-writing one.
+- **Languages without spaces** (Chinese, Japanese, Thai): a `units: 'characters'` mode, longest match over
+  characters, plus a script-aware `shardKey` (see "More languages").
+- **Checker settings for English:** today English gets only the region check. Spelling would need English's
+  inflected forms (`regularBaseForms`), not a syllable list.
+- **Dictation text:** speech recognizers write standard spellings (*hông* → *không*), so don't treat
+  missing Southern words in dictated text as the learner's mistake.
+- **"Does this sound natural?":** rules can't judge this; an optional, paid "ask the AI" button could.
+
 ## Pronouns
 
 - **Possessives:** plain "her" leads with its possessive sense ("belonging to her"), Wiktionary's first,

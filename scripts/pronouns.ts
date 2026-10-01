@@ -67,6 +67,7 @@ export function buildPronounTable(
       row[person] = (r[person] ?? []).map((p) => pick(`${r.id}.${person}`, p)).filter((c) => c !== null)
     }
     if (r.default) row.default = true
+    if (r.respect) row.respect = true
     if (r.warning) row.warning = r.warning
     return row
   })

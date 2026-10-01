@@ -3,6 +3,7 @@ import {
   fromStored,
   normalizeEnglish,
   shardKey,
+  type CheckerConfig,
   type PronounRow,
   type EnglishShard,
   type Entry,
@@ -96,6 +97,10 @@ export type Dictionary = {
   pronouns(options?: PronounOptions): Promise<PronounRow[]>
   /** Hand-picked first choices for English meanings (see PickRow). Empty for languages without any. */
   picks(): Promise<PickRow[]>
+  /** How the checker reads this language (see CheckerConfig); `{}` for languages without settings. */
+  checker(): Promise<CheckerConfig>
+  /** Syllable → Zipf frequency (0 when unknown), for languages written in syllables; `{}` otherwise. */
+  syllables(): Promise<Record<string, number>>
 }
 
 /**
@@ -202,6 +207,16 @@ export function createDictionary(options: DictionaryOptions): Dictionary {
       return m.picks ? loadOnce<PickRow[]>('picks.json') : []
     },
 
+    async checker() {
+      const m = await meta()
+      return m.checker ? loadOnce<CheckerConfig>('checker.json') : {}
+    },
+
+    async syllables() {
+      const m = await meta()
+      return m.syllables ? loadOnce<Record<string, number>>('syllables.json') : {}
+    },
+
     async pronouns({ listener, region, speaker, exclude = DEFAULT_EXCLUDED_LABELS } = {}) {
       const m = await meta()
       if (!m.pronouns) return []
@@ -227,3 +242,4 @@ export function createDictionary(options: DictionaryOptions): Dictionary {
 }
 
 export * from './translate.ts'
+export * from './check.ts'
