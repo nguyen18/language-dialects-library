@@ -173,6 +173,11 @@ export type CheckerConfig = {
   ambiguousPronouns?: string[]
   /** Sentence endings expected when speaking up (pronoun-table rows marked `respect`), e.g. Vietnamese "ạ". */
   politeEndings?: string[]
+  /**
+   * English words (English is the bridge) this language usually has no word for, so the checker suggests
+   * leaving them out rather than translating them: Vietnamese has no articles ("the", "a", "an").
+   */
+  leaveOut?: string[]
 }
 
 /**

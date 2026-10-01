@@ -1,17 +1,20 @@
-// Checking text in one language: spelling and accents, words from another region, and pronouns and
-// polite endings that fit who you're talking to.
+// Checking text in one language. By default it's a spellchecker that gives a correction for every word it
+// can: syllables that aren't in the language get their accented forms ("khong" → "không"), and words in the
+// learner's own language (English by default) get the target-language word ("market" → "chợ"). Further
+// checks are opt-in (`rules`): words from another region, pronouns and polite endings that fit who you're
+// talking to, and consistency within the text.
 //
 // Every rule reads only the language's data: its dictionary, pronoun table, checker.json and
 // syllables.json (see CheckerConfig). Adding a language means adding data and settings in
-// languages/<lang>.ts, not code here. A rule whose data a language doesn't have is skipped, so a language
-// without checker settings is still checked for words from another region.
+// languages/<lang>.ts, not code here. A rule whose data a language doesn't have is skipped.
 //
 // The checker only speaks up when it's confident and stays silent otherwise, so no issues means none of
 // the checks found anything, not that the text is correct.
 
 import { createDictionary, resolveRegion, type Dictionary } from './index.ts'
 import { joined, matchCase, plain, segment, sentencesOf, units, type Unit, type Word } from './text.ts'
-import { createTranslator, type TranslatorOptions } from './translate.ts'
+import { markLanguages } from './detect.ts'
+import { createTranslator, type Translator, type TranslatorOptions } from './translate.ts'
 import {
   PRONOUN_PERSONS,
   type CheckerConfig,
@@ -21,7 +24,28 @@ import {
   type PronounRow,
 } from './types.ts'
 
-export type CheckRule = 'spelling' | 'dialect' | 'pronoun-relationship' | 'pronoun-pair' | 'pronoun-consistency' | 'polite-ending'
+export type CheckRule =
+  | 'spelling'
+  | 'foreign-word'
+  | 'dialect'
+  | 'pronoun-relationship'
+  | 'pronoun-pair'
+  | 'pronoun-consistency'
+  | 'polite-ending'
+
+/**
+ * Which checks run unless `rules` says otherwise: the spellchecker (spelling, and words in the learner's
+ * own language, with their translation). The rest are opt-in, e.g. `rules: { dialect: true }`.
+ */
+export const DEFAULT_CHECK_RULES: Record<CheckRule, boolean> = {
+  spelling: true,
+  'foreign-word': true,
+  dialect: false,
+  'pronoun-relationship': false,
+  'pronoun-pair': false,
+  'pronoun-consistency': false,
+  'polite-ending': false,
+}
 
 export type CheckIssue = {
   rule: CheckRule
@@ -44,15 +68,28 @@ export type CheckIssue = {
 export type CheckOptions = {
   /** Language code of the text, e.g. "vi". */
   lang: string
-  /** Region or region group the text should be in, e.g. "Southern". Without it, mixed regions are flagged. */
+  /**
+   * The learner's own language, whose words in the text are translated (`foreign-word`). Default "en";
+   * none when it's the text's language.
+   */
+  base?: string
+  /**
+   * Region or region group the text should be in, e.g. "Southern": translations use its words, and the
+   * `dialect` check flags other regions' words (without it, mixed regions).
+   */
   region?: string
+  /** 'casual' allows colloquial translations (Southern "tui"); otherwise plain ones come first. */
+  register?: 'casual' | 'neutral' | 'polite'
   /** Who you're talking to, as a pronoun-table row id (see Dictionary.pronouns), e.g. "parent". */
   listener?: string
   /** Who you're talking about, as a pronoun-table row id, for "he/she" and "they" pronouns. */
   about?: string
   /** The speaker's gender, for pronouns that depend on it. */
   speaker?: 'male' | 'female'
-  /** Turn rules off, e.g. { 'polite-ending': false }. All are on by default. */
+  /**
+   * Turn checks on or off. By default only the spellchecker runs (DEFAULT_CHECK_RULES: `spelling` and
+   * `foreign-word`); opt in to others, e.g. { dialect: true, 'pronoun-relationship': true }.
+   */
   rules?: Partial<Record<CheckRule, boolean>>
 }
 
@@ -61,6 +98,8 @@ export type CheckResult = {
   text: string
   /** Sorted by position. */
   issues: CheckIssue[]
+  /** The text split by language (the target and the base), in order; one part when no base is given. */
+  parts: { text: string; lang: string; start: number; end: number }[]
 }
 
 export type Checker = {
@@ -79,7 +118,7 @@ const ABOUT_PERSONS = new Set<PronounPerson>(['third', 'thirdPlural'])
 const SELF_PERSONS = new Set<PronounPerson>(['self', 'selfPlural'])
 const ADDRESSEE_PERSONS = new Set<PronounPerson>(['addressee', 'addresseePlural'])
 
-type Sentence = { units: Unit[]; words: Word[] }
+type Sentence = { units: Unit[]; words: Word[]; langs: string[] }
 type PronounMatch = { text: string; lower: string; start: number; end: number; person: PronounPerson; sentence: number }
 
 type Context = {
@@ -92,6 +131,11 @@ type Context = {
   rows: () => Promise<PronounRow[]>
   pronounMatches: () => PronounMatch[]
   suggestRegional: (word: Word, region: string) => Promise<string[]>
+  /** The learner's own language, or undefined when not checked. */
+  base: string | undefined
+  /** Whether a unit is in the base language (by its start offset). */
+  inBase: (u: Unit) => boolean
+  translator: Translator
 }
 
 const quote = (s: string) => `“${s}”`
@@ -102,9 +146,19 @@ const unique = <T>(items: T[]) => [...new Set(items)]
 
 // --- Rules -----------------------------------------------------------------------------------------------
 
-// Spelling and accents, for languages written in syllables with a syllable list: a syllable that isn't in
-// the language is flagged, with the accented forms it could be ("khong" → "không"). Plain-letter
-// syllables with no accented form are left alone: usually a name or a foreign word ("email").
+// Spelling and accents, for languages written in syllables with a syllable list (with frequencies):
+// - a syllable that isn't in the language is flagged, with the accented forms it could be ("khong" →
+//   "không"); plain-letter syllables with no accented form are left alone (names, foreign words: "email");
+// - a plain-letter syllable that is a word but a rare one, next to a much more common accented form, is
+//   probably missing its accents ("toi" → "tôi", "hom" → "hôm"). In a sentence typed without accents
+//   (mostly plain letters, with a missing-accents error already), any accented form that's more common
+//   counts ("an" → "ăn"; but not "con" → "còn", about as common). Left alone: capitalized words
+//   mid-sentence (names) and the language's listed pronouns, some written without accents ("tui").
+// Units inside a known word, or in the learner's own language, aren't checked.
+// Zipf points by which an accented form must be more common than a plain-letter word to be suggested.
+const ACCENTS_GAP = 1.5
+const ACCENTS_GAP_UNACCENTED_TEXT = 0.2
+
 async function spelling(ctx: Context): Promise<CheckIssue[]> {
   if (ctx.config.units !== 'syllables' || !ctx.meta.syllables) return []
   const syllables = await ctx.dict.syllables()
@@ -112,26 +166,102 @@ async function spelling(ctx: Context): Promise<CheckIssue[]> {
   for (const s of Object.keys(syllables)) byPlain.set(plain(s), [...(byPlain.get(plain(s)) ?? []), s])
   for (const list of byPlain.values()) list.sort((a, b) => syllables[b] - syllables[a])
   const issues: CheckIssue[] = []
-  for (const word of ctx.sentences.flatMap((s) => s.words)) {
-    if (word.entries.length) continue
-    for (const u of word.units) {
+  const suggest = (u: Unit, candidates: string[], severity: CheckIssue['severity'], message: string) =>
+    issues.push({ rule: 'spelling', severity, start: u.start, end: u.end, text: u.text, message, suggestions: candidates.map((c) => matchCase(u.text, c)) })
+  const options = (u: Unit, candidates: string[]) => listOf(candidates.map((c) => quote(matchCase(u.text, c))), 'or')
+  const pronouns = new Set(Object.values(ctx.config.pronouns ?? {}).flat().map((w) => w.toLowerCase()))
+
+  for (const sentence of ctx.sentences) {
+    const lone = sentence.words.filter((w) => !w.entries.length || w.units.length === 1).flatMap((w) => w.units).filter((u) => !ctx.inBase(u))
+    const target = sentence.units.filter((u) => !ctx.inBase(u) && /\p{L}/u.test(u.text))
+    const mostlyPlain = target.filter((u) => u.text.toLowerCase() === plain(u.text.toLowerCase())).length >= target.length * 0.7
+    let missingAccents = false
+    const rare: Unit[] = []
+    for (const u of lone) {
       const lower = u.text.toLowerCase().replace(/[’']/g, '')
-      if (/\d/.test(lower) || lower in syllables) continue
-      const candidates = (byPlain.get(plain(lower)) ?? []).slice(0, 3)
-      const accented = lower !== plain(lower)
-      if (!candidates.length && !accented) continue
-      issues.push({
-        rule: 'spelling',
+      if (/\d/.test(lower)) continue
+      const inWord = sentence.words.some((w) => w.entries.length && w.units.length > 1 && w.units.includes(u))
+      if (inWord) continue
+      if (!(lower in syllables)) {
+        const candidates = (byPlain.get(plain(lower)) ?? []).slice(0, 3)
+        const accented = lower !== plain(lower)
+        if (!candidates.length && !accented) continue
+        if (!accented) missingAccents = true
         // Missing accents on plain letters is the common learner slip; a wrong accent is more surely wrong.
-        severity: accented ? 'error' : 'warning',
-        start: u.start,
-        end: u.end,
-        text: u.text,
-        message: candidates.length
-          ? `${quote(u.text)} isn't a ${ctx.meta.name} syllable. Did you mean ${listOf(candidates.map((c) => quote(matchCase(u.text, c))), 'or')}?`
-          : `${quote(u.text)} isn't a ${ctx.meta.name} syllable. Check the spelling and accents.`,
-        suggestions: candidates.map((c) => matchCase(u.text, c)),
-      })
+        suggest(u, candidates, accented ? 'error' : 'warning', candidates.length
+          ? `${quote(u.text)} isn't a ${ctx.meta.name} syllable. Did you mean ${options(u, candidates)}?`
+          : `${quote(u.text)} isn't a ${ctx.meta.name} syllable. Check the spelling and accents.`)
+      } else if (lower === plain(lower) && !pronouns.has(lower) && (u === sentence.units[0] || !/\p{Lu}/u.test(u.text.charAt(0)))) {
+        rare.push(u)
+      }
+    }
+    // Typed without accents: mostly plain letters, and an accent error already, or 3+ words with no accent at all.
+    const unaccented = mostlyPlain && (missingAccents || (target.length >= 3 && target.every((u) => u.text.toLowerCase() === plain(u.text.toLowerCase()))))
+    for (const u of rare) {
+      const lower = u.text.toLowerCase()
+      const gap = unaccented ? ACCENTS_GAP_UNACCENTED_TEXT : ACCENTS_GAP
+      const better = (byPlain.get(lower) ?? []).filter((c) => c !== lower && syllables[c] >= syllables[lower] + gap - 1e-9).slice(0, 3)
+      if (!better.length) continue
+      suggest(u, better, 'warning', unaccented
+        ? `${quote(u.text)} looks typed without accents. Did you mean ${options(u, better)}?`
+        : `${quote(u.text)} is a rare word; did you mean ${options(u, better)}?`)
+    }
+  }
+  return issues
+}
+
+// Words in the learner's own language (English by default), with the target-language word to use: "market"
+// → "chợ". Runs of base units are split into the longest phrases the base dictionary knows ("ice cream"),
+// each translated in the region and register. Words the language usually has no word for
+// (CheckerConfig.leaveOut: Vietnamese has no articles) are suggested to be left out.
+async function foreignWord(ctx: Context): Promise<CheckIssue[]> {
+  const base = ctx.base
+  if (!base) return []
+  const leaveOut = new Set((ctx.config.leaveOut ?? []).map((w) => w.toLowerCase()))
+  const issues: CheckIssue[] = []
+  for (const s of ctx.sentences) {
+    const runs: Unit[][] = []
+    s.units.forEach((u, i) => {
+      if (!ctx.inBase(u)) return
+      const last = runs[runs.length - 1]
+      if (last && last[last.length - 1] === s.units[i - 1] && joined(ctx.text, s.units[i - 1], u)) last.push(u)
+      else runs.push([u])
+    })
+    for (const run of runs) {
+      for (let i = 0; i < run.length; ) {
+        // The longest phrase the base dictionary knows and the language has a word for; single words
+        // always give an issue, with or without a translation.
+        let found: { k: number; words: string[]; leave: boolean } | undefined
+        for (let k = Math.min(MAX_FOREIGN_UNITS, run.length - i); k >= 1 && !found; k--) {
+          const phrase = ctx.text.slice(run[i].start, run[i + k - 1].end)
+          if (k === 1 && leaveOut.has(phrase.toLowerCase())) {
+            found = { k, words: [], leave: true }
+            break
+          }
+          if (k > 1 && !(await ctx.translator.senses(phrase, { from: base }).catch(() => [])).length) continue
+          const [group] = await ctx.translator.translate(phrase, {
+            from: base, to: ctx.options.lang, toRegion: ctx.options.region, register: ctx.options.register, listener: ctx.options.listener, limit: 3,
+          }).catch(() => [])
+          const words = unique((group?.translations ?? []).map((t) => t.word))
+          if (words.length || k === 1) found = { k, words, leave: false }
+        }
+        const { k, words, leave } = found!
+        const span = run.slice(i, i + k)
+        const text = ctx.text.slice(span[0].start, span[k - 1].end)
+        i += k
+        const at = { rule: 'foreign-word' as const, severity: 'error' as const, start: span[0].start, end: span[k - 1].end, text }
+        if (leave) {
+          issues.push({ ...at, message: `${quote(text)} isn't ${ctx.meta.name}; ${ctx.meta.name} usually has no word for it, so leave it out.`, suggestions: [''] })
+          continue
+        }
+        issues.push({
+          ...at,
+          message: words.length
+            ? `${quote(text)} isn't ${ctx.meta.name}: say ${listOf(words.map(quote), 'or')}.`
+            : `${quote(text)} isn't ${ctx.meta.name}, and no translation was found.`,
+          suggestions: words.map((w) => (span[0].start === s.units[0].start ? matchCase(text, w) : w)),
+        })
+      }
     }
   }
   return issues
@@ -145,6 +275,7 @@ async function dialect(ctx: Context): Promise<CheckIssue[]> {
   const all = new Set(ctx.meta.regions)
   const regional = ctx.sentences
     .flatMap((s) => s.words)
+    .filter((word) => !word.units.some((u) => ctx.inBase(u)))
     .map((word) => ({ word, sense: word.entries[0]?.senses[0] }))
     .filter((x): x is { word: Word; sense: Entry['senses'][number] } =>
       Boolean(x.sense?.regionTagged && x.sense.regions.length < all.size))
@@ -308,8 +439,12 @@ async function politeEnding(ctx: Context): Promise<CheckIssue[]> {
   return issues
 }
 
+// The longest base-language phrase looked up as one ("ice cream", "take care of").
+const MAX_FOREIGN_UNITS = 3
+
 const RULES: Record<CheckRule, (ctx: Context) => Promise<CheckIssue[]>> = {
   spelling,
+  'foreign-word': foreignWord,
   dialect,
   'pronoun-relationship': pronounRelationship,
   'pronoun-pair': pronounPair,
@@ -351,10 +486,13 @@ export function createChecker(options: CheckerOptions = {}): Checker {
         }
         return pending
       }
+      const base = (opts.base ?? 'en') === opts.lang ? undefined : (opts.base ?? 'en')
       const sentences: Sentence[] = []
       for (const list of sentencesOf(text, units(text))) {
-        sentences.push({ units: list, words: await segment(text, list, config.maxWordUnits ?? 3, lookup) })
+        const langs = base ? await markLanguages(list, { lang: opts.lang, base, target: d, baseDictionary: dict(base), translator }) : list.map(() => opts.lang)
+        sentences.push({ units: list, langs, words: await segment(text, list, config.maxWordUnits ?? 3, lookup) })
       }
+      const baseUnits = new Set(sentences.flatMap((s) => s.units.filter((_, i) => s.langs[i] !== opts.lang).map((u) => u.start)))
 
       let rows: Promise<PronounRow[]> | undefined
       let matches: PronounMatch[] | undefined
@@ -369,6 +507,9 @@ export function createChecker(options: CheckerOptions = {}): Checker {
         // The language's reliable pronouns in the text, longest first ("chúng tôi" before "tôi"), matched on
         // units directly so pronouns the dictionary doesn't list as one word ("tụi mày") are found too.
         pronounMatches: () => (matches ??= findPronouns(text, sentences, config)),
+        base,
+        inBase: (u) => baseUnits.has(u.start),
+        translator,
         suggestRegional: async (word, region) => {
           try {
             const [group] = await translator.translate(word.lower, {
@@ -381,10 +522,20 @@ export function createChecker(options: CheckerOptions = {}): Checker {
         },
       }
       const results = await Promise.all(
-        (Object.keys(RULES) as CheckRule[]).filter((r) => opts.rules?.[r] !== false).map((r) => RULES[r](ctx)),
+        (Object.keys(RULES) as CheckRule[]).filter((r) => opts.rules?.[r] ?? DEFAULT_CHECK_RULES[r]).map((r) => RULES[r](ctx)),
       )
       const issues = results.flat().sort((a, b) => a.start - b.start || SEVERITY_ORDER[a.severity] - SEVERITY_ORDER[b.severity])
-      return { text, issues }
+      // The text split by language: consecutive units in one language, with the text between them.
+      const parts: CheckResult['parts'] = []
+      for (const s of sentences) {
+        s.units.forEach((u, i) => {
+          const last = parts[parts.length - 1]
+          if (last && last.lang === s.langs[i]) last.end = u.end
+          else parts.push({ text: '', lang: s.langs[i], start: u.start, end: u.end })
+        })
+      }
+      for (const p of parts) p.text = text.slice(p.start, p.end)
+      return { text, issues, parts }
     },
   }
 }
