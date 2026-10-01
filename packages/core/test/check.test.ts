@@ -196,6 +196,11 @@ describe('checker (real Vietnamese data)', { skip: !built && 'build en and vi da
     assert.deepEqual(await fixes('Nó expensive.', { region: 'Northern' }), ['expensive→đắt'])
     // "but" is English here, not a misspelled "bút"; regions and pronouns aren't checked by default.
     assert.deepEqual(await fixes('Tôi muốn ăn thịt lợn but tui không có tiền.', { region: 'Southern' }), ['but→nhưng'])
+    // Words both languages have go by frequency: "em", "di" are Vietnamese next to English words
+    // (English Wiktionary has rare "em", "di"); "the" is English.
+    assert.deepEqual(await fixes('hello em di shopping and em muon an com'), [
+      'hello→chào', 'di→đi', 'shopping→mua sắm', 'and→và', 'muon→muốn', 'an com→ăn cơm',
+    ])
     const { parts } = await spell('Hôm nay tôi đi market với má.')
     assert.deepEqual(parts.map((p) => p.lang), ['vi', 'en', 'vi'])
   })
