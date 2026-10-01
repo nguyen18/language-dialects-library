@@ -107,6 +107,48 @@ Picks are keyed by English meaning, so each language needs one list however many
 
 The cases involving Spanish were removed with it. The held-out set has since been looked at, so new held-out cases are needed before relying on it (see [`FUTURE_IMPROVEMENTS.md`](FUTURE_IMPROVEMENTS.md)).
 
+## Checking text
+
+### `createChecker({ baseUrl?, load?, dictionary? })` → `checker.check(text, options)`
+
+Checks a learner's sentence in one language and returns issues with the exact place in the text, a short explanation and suggested fixes. It runs in the browser like the rest of the library: no API calls, no cost.
+
+```ts
+import { createChecker } from 'which-dialect'
+
+const checker = createChecker()
+const { text, issues } = await checker.check('Tôi muốn ăn thịt lợn và bắp khong?', {
+  lang: 'vi', region: 'Southern', listener: 'parent',
+})
+// “Tôi”: Talking to your parents, say “con” for “I”, not “Tôi”.               → Con
+// “lợn”: “lợn” is Northern; in Southern Vietnamese, say “heo”.                → heo, cúi, ỉn
+// “khong”: “khong” isn't a Vietnamese syllable. Did you mean “không”, “khổng” or “khống”?
+// “khong”: Talking to your parents, end the sentence with “ạ” to sound polite. (suggestion)
+```
+
+| Option | Meaning |
+|---|---|
+| `lang` | The text's language. |
+| `region` | The region the text should be in. Without it, words that don't fit the rest of the text's region are pointed out (*lợn*, Northern, next to *nha*, Southern). |
+| `listener` | Who you're talking to, as a [pronoun-table](#looking-words-up) row id (`'parent'`, `'teacher'`, `'friend'`, …): pronouns and polite endings are checked against it. |
+| `about` | Who you're talking about, for "he/she" and "they" pronouns. |
+| `speaker` | `'male'` or `'female'`, for pronouns that depend on it. |
+| `rules` | Turn checks off, e.g. `{ 'polite-ending': false }`. |
+
+Each issue has `rule`, `severity` (`'error'`: not a word of the language; `'warning'`: wrong for the chosen region or relationship; `'suggestion'`: often better), `start`/`end` (offsets into the returned `text`, the input in Unicode NFC form), `text`, `message` and `suggestions` (replacements for `text`, best first).
+
+The checks:
+
+- **`spelling`**: syllables that aren't in the language, with the accented forms they could be (*khong* → *không*). Plain-letter words with no accented form are left alone (names, foreign words). Languages written in syllables only (Vietnamese).
+- **`dialect`**: words whose main meaning is tagged for another region (*lợn* in Southern text → *heo*; *muỗng* in Northern → *thìa*; in English, US *apartment* in UK text → *flat*). Words with an untagged main meaning are never flagged (*má* is "cheek" everywhere).
+- **`pronoun-relationship`**: pronouns that don't fit the listener (*tôi* to a parent → *con*; to a teacher → *em*).
+- **`pronoun-pair`**: "I" and "you" pronouns that never go together (*tao* goes with *mày*, not *bạn*), when no listener is given.
+- **`polite-ending`**: a suggestion to end sentences with *ạ* when talking to parents, elders and teachers (not for exclamations).
+
+The checker only speaks up when it's confident, so **no issues means none of the checks found anything, not that the text is correct**. It doesn't check word order, classifiers or whether a sentence sounds natural yet. Only reliable pronouns are checked: kinship words like *con* (also "child", and a classifier in *con chó*) aren't, and *bạn* (also "friend") only gets suggestions.
+
+**Every language uses the same checks.** They read only the language's data and its `checker` settings in `languages/<code>.ts` (how text splits into words, which pronouns are reliable, polite endings), so a check whose data a language doesn't have is skipped. A language without checker settings still gets the `dialect` check.
+
 ## Looking words up
 
 ### `createDictionary({ lang, baseUrl?, load? })`
@@ -115,6 +157,7 @@ One language's dictionary. `baseUrl` defaults to `https://cdn.jsdelivr.net/npm/w
 
 - `dictionary.lookup(word)`: all entries for a word, with every sense's definitions, regions, labels, synonyms and variant links (`altOf`).
 - `dictionary.searchEnglish(term, { region?, pos?, exclude?, limit?, allSenses? })`: words for an English term in this language, one per word, best first (no meaning handling: use the translator for that). `allSenses: true` returns every matching sense of those words instead.
+- `dictionary.checker()` / `dictionary.syllables()`: the language's checker settings and syllable list (with frequencies), used by `createChecker` (`{}` for languages without them).
 - `dictionary.picks()`: the language's [hand-picked words](#hand-picked-words), `{ word, pos, gloss, picks: [{ word, tags? }], first? }` per English meaning (empty for languages without any).
 - `dictionary.meta()`: the language's name, regions, region groups, source, license, build date and counts.
 - `dictionary.pronouns({ listener?, region?, speaker?, exclude? })`: how to say "I", "you", "he/she", "we", plural "you" and "they" depending on who you're talking to (or about), one row per relationship, for languages whose pronouns depend on it (so far Vietnamese; empty for others). Each row has the columns `self`, `addressee`, `third`, `selfPlural`, `addresseePlural` and `thirdPlural`. Each word says where it comes from: a dictionary definition (`source: 'gloss'`, with the `gloss`), a grammar rule for a regular compound the dictionary doesn't list (`source: 'rule'`, e.g. *các anh*, with a `note`), or a hand-written override (`source: 'override'`, with a `note`); and, when it has one, the `gender` of the person it refers to and whether a "we" is `inclusive`.
@@ -211,7 +254,8 @@ Generated data isn't committed (it would bloat git history); it's built before p
 2. Copy a data package (`packages/vi`) to `packages/<code>` and update its `package.json` and `README.md`.
 3. Add the language's code to `translationLangs` in `languages/en.ts` (so English keeps its translation tables for it) and rebuild English.
 4. `npm run build:data -- <code>`, check the results, add a few real-data tests and evaluation cases, and publish.
-5. Optional, later: [hand-picked words](#hand-picked-words). A speaker runs `npm run picks-sheet -- <code>`, fills in `your_pick` only where the first choice is wrong, and pastes the `--apply` output into `picks`.
+5. Optional: [checker](#checking-text) settings (`checker` in `languages/<code>.ts`): `units: 'syllables'` for languages written in syllables (also builds the syllable list for accent suggestions), `maxWordUnits`, the reliable `pronouns` per pronoun-table column, `ambiguousPronouns`, and `politeEndings`. Without them, the language is read as space-separated words and gets the region check.
+6. Optional, later: [hand-picked words](#hand-picked-words). A speaker runs `npm run picks-sheet -- <code>`, fills in `your_pick` only where the first choice is wrong, and pastes the `--apply` output into `picks`.
 
 Languages in non-Latin scripts (Chinese, Arabic, Russian, …) will need a script-aware version of `shardKey` first: today files are split by the first two Latin letters.
 

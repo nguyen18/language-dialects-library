@@ -91,6 +91,34 @@ export type LanguageMeta = {
   pronouns?: boolean
   /** true when the language has hand-picked translations (picks.json, see PickRow). */
   picks?: boolean
+  /** true when the language has checker settings (checker.json, see CheckerConfig). */
+  checker?: boolean
+  /** true when the language has a syllable list (syllables.json: syllable → Zipf frequency, 0 when unknown). */
+  syllables?: boolean
+}
+
+/**
+ * How the checker reads one language (languages/<lang>.ts `checker`, stored as data/checker.json). Every
+ * field is optional: a language without it is read as space-separated words, and gets the checks that
+ * only need its dictionary (dialect mixing).
+ */
+export type CheckerConfig = {
+  /**
+   * What spaces separate: 'words' (English), or 'syllables' that group into dictionary words (Vietnamese
+   * "thịt heo", "kết quả"). With 'syllables' the build also writes syllables.json for accent suggestions.
+   */
+  units?: 'words' | 'syllables'
+  /** The longest dictionary word to look for, in units (default 3). */
+  maxWordUnits?: number
+  /**
+   * Pronouns that are reliably pronouns, by pronoun-table column ("tôi", "tao", "mày"). The pronoun checks
+   * look only at these: kinship words like Vietnamese "con" (also "child", a classifier) aren't listed.
+   */
+  pronouns?: Partial<Record<PronounPerson, string[]>>
+  /** Listed pronouns that are also common nouns ("bạn": you, or friend); checked, but only as suggestions. */
+  ambiguousPronouns?: string[]
+  /** Sentence endings expected when speaking up (pronoun-table rows marked `respect`), e.g. Vietnamese "ạ". */
+  politeEndings?: string[]
 }
 
 /**
@@ -166,6 +194,8 @@ export type PronounRow = {
   thirdPlural: PronounChoice[]
   /** The row to use when the relationship isn't known (neutral words: Vietnamese "tôi", "bạn"). */
   default?: boolean
+  /** Speaking up to this person (parents, elders, teachers): polite sentence endings are expected. */
+  respect?: boolean
   /** A caution for the whole row, e.g. that "tao"/"mày" are rude outside close friendships. */
   warning?: string
 }

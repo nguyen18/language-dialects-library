@@ -1,5 +1,7 @@
 // Per-language settings for the build. Each language adds one file in languages/.
 
+import type { CheckerConfig } from '../packages/core/src/types.ts'
+
 export type LanguageConfig = {
   /** ISO 639 code; also the data package suffix (which-dialect-<lang>). */
   lang: string
@@ -67,6 +69,8 @@ export type LanguageConfig = {
    * natural word and the ranking puts another first.
    */
   picks?: PickRowConfig[]
+  /** How the grammar checker reads the language (see CheckerConfig); stored as data/checker.json. */
+  checker?: CheckerConfig
 }
 
 /**
@@ -102,5 +106,7 @@ export type PronounRowConfig = {
   label: string
   /** The row to use when the relationship isn't known. At most one row. */
   default?: boolean
+  /** Speaking up to this person (parents, elders, teachers): polite sentence endings are expected. */
+  respect?: boolean
   warning?: string
 } & Partial<Record<'self' | 'addressee' | 'third' | 'selfPlural' | 'addresseePlural' | 'thirdPlural', PronounPick[]>>

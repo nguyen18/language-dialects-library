@@ -336,7 +336,13 @@ async function main() {
   if (config.pronouns) {
     const { rows, report } = buildPronounTable(entries, config.pronouns, config.regions)
     const stored: StoredPronounRow[] = rows.map((r) => {
-      const row: StoredPronounRow = { id: r.id, label: r.label, ...(r.default ? { default: true } : {}), ...(r.warning ? { warning: r.warning } : {}) }
+      const row: StoredPronounRow = {
+        id: r.id,
+        label: r.label,
+        ...(r.default ? { default: true } : {}),
+        ...(r.respect ? { respect: true } : {}),
+        ...(r.warning ? { warning: r.warning } : {}),
+      }
       for (const person of PRONOUN_PERSONS) if (r[person].length) row[person] = r[person].map((c) => toStored(c))
       return row
     })
@@ -346,6 +352,22 @@ async function main() {
         `${report.rules} from grammar rules, ${report.overrides} overrides`,
     )
     for (const p of report.problems) console.warn(`  WARNING: ${p}`)
+  }
+
+  if (config.checker) {
+    await writeFile(join(outDir, 'checker.json'), JSON.stringify(config.checker))
+    if (config.checker.units === 'syllables') {
+      // Every syllable of the headwords, with its frequency: the checker suggests accents from it.
+      const freq = config.wordfreq ? await loadFrequencies(ROOT, config.lang, config.wordfreq) : () => undefined
+      const syllables: Record<string, number> = {}
+      for (const e of entries) {
+        for (const s of e.word.toLowerCase().normalize('NFC').split(/[\s-]+/)) {
+          if (/^[\p{L}\p{M}]+$/u.test(s) && !(s in syllables)) syllables[s] = freq(s) ?? 0
+        }
+      }
+      await writeFile(join(outDir, 'syllables.json'), JSON.stringify(syllables))
+      console.log(`Checker: ${Object.keys(syllables).length} syllables`)
+    }
   }
 
   const senses = entries.flatMap((e) => e.senses)
@@ -371,6 +393,8 @@ async function main() {
     shards: { words: wordShards, en: enShards },
     ...(shardLength !== 2 ? { shardLength } : {}),
     ...(config.pronouns ? { pronouns: true } : {}),
+    ...(config.checker ? { checker: true } : {}),
+    ...(config.checker?.units === 'syllables' ? { syllables: true } : {}),
   }
   await writeFile(join(outDir, 'meta.json'), JSON.stringify(meta, null, 2))
   await writePicks(config)

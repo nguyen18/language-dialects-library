@@ -36,6 +36,24 @@ const config: LanguageConfig = {
   keepWord: (word) => /[a-zA-ZÀ-ỹđĐ]/.test(word),
   // wordfreq only has a "small" Vietnamese list (the most common ~25k tokens, which are syllables).
   wordfreq: 'small',
+  // The grammar checker (see CheckerConfig). Vietnamese is written in syllables that group into words
+  // ("thịt heo", "kết quả"); the longest common words are about 4 syllables.
+  checker: {
+    units: 'syllables',
+    maxWordUnits: 4,
+    // Only pronouns that are reliably pronouns. Left out on purpose: kinship words (con is also "child"
+    // and a classifier: con chó), mình (also "body, self"), nó (also "it"), họ (also "surname").
+    pronouns: {
+      self: ['tôi', 'tui', 'tớ', 'tao'],
+      selfPlural: ['chúng tôi', 'chúng ta', 'chúng mình', 'chúng tao', 'tụi tui', 'tụi tao', 'tụi mình'],
+      addressee: ['mày', 'bạn'],
+      addresseePlural: ['các bạn', 'chúng mày', 'tụi mày', 'quý vị'],
+    },
+    // bạn is also "friend" (bạn của tôi: my friend), so it's only ever a suggestion.
+    ambiguousPronouns: ['bạn'],
+    // Expected at the end of sentences said to parents, elders and teachers (rows marked respect).
+    politeEndings: ['ạ'],
+  },
   // How to say "I", "you", "he/she", "we", plural "you" and "they" depending on who you're talking to
   // (or about). Picks with a `gloss` are pronoun definitions from the data ("you, my father"); rules are
   // regular compounds the dictionary doesn't list ("các" + "anh"); the few others are overrides for what
@@ -85,6 +103,7 @@ const config: LanguageConfig = {
         { word: 'mình', gloss: /^I\/me$/ },
         { word: 'tớ', gloss: /^I; me$/ },
         { word: 'tui', gloss: /^alternative form of tôi$/ },
+        { word: 'tôi', gloss: /^I\/me \(used when talking to one's friends\)$/ },
       ],
       addressee: [
         { word: 'bạn', gloss: /^you, a peer of the speaker$/ },
@@ -173,6 +192,7 @@ const config: LanguageConfig = {
     },
     {
       id: 'parent',
+      respect: true,
       label: 'Your parents',
       self: [{ word: 'con', gloss: /^I\/me \(used by children when talking to their parents\)$/ }],
       addressee: [
@@ -192,6 +212,7 @@ const config: LanguageConfig = {
     },
     {
       id: 'parents-age',
+      respect: true,
       label: "An older adult (your parents' age)",
       self: [
         { word: 'cháu', gloss: /^I\/me, someone who's not your child and who's a lot younger than you$/ },
@@ -212,6 +233,7 @@ const config: LanguageConfig = {
     },
     {
       id: 'grandparents-age',
+      respect: true,
       label: "Someone your grandparents' age",
       self: [
         { word: 'cháu', gloss: /^I\/me, your nephew, niece or grandchild$/ },
@@ -232,6 +254,7 @@ const config: LanguageConfig = {
     },
     {
       id: 'teacher',
+      respect: true,
       label: 'Your teacher',
       self: [{ word: 'em', note: 'What students say; Wiktionary defines em as "you" for a child or student, but not as "I".' }],
       addressee: [
