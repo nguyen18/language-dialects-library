@@ -59,6 +59,8 @@ export type FilledFrame = {
   slots: { name: string; pos: 'noun' | 'verb' | 'adj' }[]
   /** true when every content slot is filled (and translated). */
   complete: boolean
+  /** true for frames that can be part of a sentence ("but it was {quality}"). */
+  clause?: boolean
 }
 
 /** A content slot value: English (translated for you) or `{ text }` in the target language. */
@@ -203,7 +205,7 @@ export function createPhrasebook(options: PhrasebookOptions = {}): Phrasebook {
     const en = Object.keys(frame.slots).reduce(
       (s, name) => (typeof values[name] === 'string' ? s.replace(`{${name}}`, values[name] as string) : s), frame.en[0])
     return {
-      id: frame.id, topic: frame.topic, en, text,
+      id: frame.id, topic: frame.topic, en, text, ...(frame.clause ? { clause: true } : {}),
       parts: parts.filter((p) => p.text),
       slots,
       complete: slots.every(({ name }) => values[name] !== undefined) && !parts.some((p) => p.untranslated),

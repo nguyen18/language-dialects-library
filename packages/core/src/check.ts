@@ -150,8 +150,9 @@ const unique = <T>(items: T[]) => [...new Set(items)]
 // - a syllable that isn't in the language is flagged, with the accented forms it could be ("khong" →
 //   "không"); plain-letter syllables with no accented form are left alone (names, foreign words: "email");
 // - a plain-letter syllable that is a word but a rare one, next to a much more common accented form, is
-//   probably missing its accents ("toi" → "tôi", "hom" → "hôm"). In a sentence typed without accents
-//   (mostly plain letters, with a missing-accents error already), any accented form that's more common
+//   probably missing its accents ("toi" → "tôi", "hom" → "hôm"). In a sentence typed without accents (at
+//   least half plain letters and a missing-accents error already, or 3+ words with no accent at all; half,
+//   because filled-in sentence frames add accented words), any accented form that's more common
 //   counts ("an" → "ăn"; but not "con" → "còn", about as common). Left alone: capitalized words
 //   mid-sentence (names) and the language's listed pronouns, some written without accents ("tui").
 // Units inside a known word, or in the learner's own language, aren't checked.
@@ -174,7 +175,7 @@ async function spelling(ctx: Context): Promise<CheckIssue[]> {
   for (const sentence of ctx.sentences) {
     const lone = sentence.words.filter((w) => !w.entries.length || w.units.length === 1).flatMap((w) => w.units).filter((u) => !ctx.inBase(u))
     const target = sentence.units.filter((u) => !ctx.inBase(u) && /\p{L}/u.test(u.text))
-    const mostlyPlain = target.filter((u) => u.text.toLowerCase() === plain(u.text.toLowerCase())).length >= target.length * 0.7
+    const mostlyPlain = target.filter((u) => u.text.toLowerCase() === plain(u.text.toLowerCase())).length >= target.length * 0.5
     let missingAccents = false
     const rare: Unit[] = []
     for (const u of lone) {
