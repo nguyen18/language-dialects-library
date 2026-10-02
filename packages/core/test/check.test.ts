@@ -212,6 +212,17 @@ describe('checker (real Vietnamese data)', { skip: !built && 'build en and vi da
     assert.deepEqual(await fixes('Tui cho con ăn cơm.'), [])
   })
 
+  it('reads English-looking words as Vietnamese without accents when that is likelier', async () => {
+    // "rat" is "rất" (far more common than English "rat"); "met" is a close call, Vietnamese among Vietnamese.
+    assert.deepEqual(await fixes('Tôi rat vui.'), ['rat→rất'])
+    assert.deepEqual(await fixes('Hôm nay tôi rat met.'), ['rat→rất', 'met→mệt'])
+    assert.deepEqual(await fixes('Ket qua thi rat tot.'), ['Ket qua→Kết quả', 'thi→thì', 'rat→rất', 'tot→tốt'])
+    // English stays English: "but" is much more common in English than "bút" in Vietnamese, and "met" among
+    // English words is English.
+    assert.deepEqual(await fixes('Tôi muốn ăn thịt lợn but tui không có tiền.', { region: 'Southern' }), ['but→nhưng'])
+    assert.ok((await fixes('I met my friend today.')).includes('met→gặp'))
+  })
+
   it('fixes accents by the word a syllable makes with its neighbors', async () => {
     // Alone, "nay" would become "này" ("this"); with "hom" it's "hôm nay" ("today").
     assert.deepEqual(await fixes('Hom nay toi di cho.'), ['Hom nay→Hôm nay', 'toi→tôi', 'di→đi'])
