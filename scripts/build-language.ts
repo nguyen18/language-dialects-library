@@ -57,6 +57,7 @@ type KaikkiSense = {
   translations?: { word?: string; lang_code?: string; code?: string; tags?: string[] }[]
   alt_of?: { word: string }[]
   form_of?: { word: string }[]
+  categories?: (string | { name?: string; kind?: string; parents?: string[] })[]
 }
 type KaikkiTranslation = NonNullable<KaikkiSense['translations']>[number] & { sense?: string }
 type KaikkiEntry = {
@@ -167,6 +168,26 @@ async function download(config: LanguageConfig, refresh: boolean) {
   return { file, url, ...info }
 }
 
+// Proper names that are places ("Japan"), from Wiktionary's place categories: 'country' for countries,
+// else 'place'. The categories are the page's, attached to whichever sense (Vietnamese "Nhật" has
+// "Countries in Asia" on its given-name sense), so they're read per entry, and the entry's senses that
+// aren't personal names are its place senses. Only those senses of proper names are indexed for English
+// search (see LanguageConfig.placeNames). Build-time only; not stored.
+const PLACE_ENTRIES = new WeakMap<Entry, 'country' | 'place'>()
+// Names kept only as places (their part of speech is skipped otherwise): non-country ones are dropped
+// below placeNames.minZipf once frequencies are known.
+const PLACE_ONLY = new WeakSet<Entry>()
+const PERSONAL_NAME = /\b(?:given name|surname|family name|patronymic|nickname)\b/i
+
+function placeKind(raw: KaikkiEntry): 'country' | 'place' | null {
+  const categories = (raw.senses ?? []).flatMap((s) => s.categories ?? []).filter((c) => typeof c === 'object')
+  if (!categories.some((c) => c.kind === 'place')) return null
+  return categories.some((c) => c.name?.startsWith('Countries') || c.parents?.includes('Countries')) ? 'country' : 'place'
+}
+
+/** Whether a sense of an entry is a place name: a place entry's sense that isn't a personal name. */
+const isPlaceSense = (e: Entry, s: Sense) => PLACE_ENTRIES.has(e) && !PERSONAL_NAME.test(s.glosses[0] ?? '')
+
 async function readEntries(file: string, config: LanguageConfig): Promise<Entry[]> {
   const skipPos = new Set(config.skipPos ?? [])
   const dropLabels = new Set(config.dropLabels ?? [])
@@ -180,12 +201,16 @@ async function readEntries(file: string, config: LanguageConfig): Promise<Entry[
     // Wiktionary splits very long pages into subpages ("i/languages M to Z" for the letter i), and Kaikki
     // uses the subpage title as the word.
     raw.word = raw.word.replace(SUBPAGE, '')
-    if (skipPos.has(raw.pos) || (config.keepWord && !config.keepWord(raw.word))) continue
+    // Proper names of a language that skips them still keep their place senses, with placeNames.
+    const place = raw.pos === 'name' && config.placeNames ? placeKind(raw) : null
+    const placesOnly = raw.pos === 'name' && skipPos.has('name') && Boolean(place)
+    if ((skipPos.has(raw.pos) && !placesOnly) || (config.keepWord && !config.keepWord(raw.word))) continue
     if (config.dropTechnical && raw.senses?.length && raw.senses.every((s) => s.topics?.length)) continue
     const senses: Sense[] = []
     for (const s of raw.senses ?? []) {
       const glosses = (s.glosses ?? []).filter((g) => g.trim()).map(cut)
       if (glosses.length === 0) continue
+      if (placesOnly && PERSONAL_NAME.test(glosses[0])) continue
       const tags = s.tags ?? []
       // Inflections are dropped (all of them, or outside formOfPos), but spelling/dialect variants ("alt-of") are kept.
       const inflection = tags.includes('form-of') && !tags.includes('alt-of')
@@ -218,15 +243,18 @@ async function readEntries(file: string, config: LanguageConfig): Promise<Entry[
       senses[0].synonyms = [...new Set([...(senses[0].synonyms ?? []), ...entrySynonyms])].slice(0, MAX_SYNONYMS)
     }
     if (senses.length > 0) {
-      entries.push({ word: raw.word, pos: raw.pos, senses: config.maxSensesPerEntry ? senses.slice(0, config.maxSensesPerEntry) : senses })
+      const entry: Entry = { word: raw.word, pos: raw.pos, senses: config.maxSensesPerEntry ? senses.slice(0, config.maxSensesPerEntry) : senses }
+      if (place) PLACE_ENTRIES.set(entry, place)
+      if (placesOnly) PLACE_ONLY.add(entry)
+      entries.push(entry)
     }
   }
   return entries
 }
 
 
-// Proper names aren't translations of English words, so they're left out of the English index
-// (they can still be looked up by word).
+// Proper names aren't translations of English words, so they're left out of the English index (they can
+// still be looked up by word), except place names, with placeNames: "Japan" finds "Nhật Bản".
 const NOT_IN_ENGLISH_INDEX = new Set(['name'])
 
 function buildEnglishIndex(entries: Entry[], regionalOnly = false): Map<string, Hit[]> {
@@ -251,8 +279,9 @@ function buildEnglishIndex(entries: Entry[], regionalOnly = false): Map<string, 
   const index = new Map<string, Hit[]>()
   const seen = new Set<string>()
   entries.forEach((e, entryIndex) => {
-    if (NOT_IN_ENGLISH_INDEX.has(e.pos)) return
+    const placesOnly = NOT_IN_ENGLISH_INDEX.has(e.pos)
     e.senses.forEach((sense, senseIndex) => {
+      if (placesOnly && !isPlaceSense(e, sense)) return
       if (regionalOnly && !sense.regionTagged) return
       const sources = sense.altOf
         ? (mainGlosses.get(`${sense.altOf}\u0000${e.pos}`) ?? mainGlosses.get(sense.altOf) ?? [])
@@ -308,7 +337,7 @@ async function main() {
   }
   const source = await download(config, flags.includes('--refresh'))
 
-  const entries = await readEntries(source.file, config)
+  let entries = await readEntries(source.file, config)
   if (config.wordfreq) {
     const freq = await loadFrequencies(ROOT, config.lang, config.wordfreq)
     for (const e of entries) {
@@ -317,6 +346,16 @@ async function main() {
     }
     console.log(`Frequencies: ${entries.filter((e) => e.frequency !== undefined).length} of ${entries.length} entries`)
   }
+  // Names kept only as places: countries always; other places when common enough, and not also an
+  // ordinary word, whose frequency they'd borrow and whose capitalized form they'd take over ("Well", a
+  // village: "Well, …" isn't a place; nor "Reading", "Bath", "Nice").
+  const minZipf = config.placeNames?.minZipf
+  if (minZipf !== undefined) {
+    const words = new Set(entries.filter((e) => e.pos !== 'name').map((e) => e.word.toLowerCase()))
+    entries = entries.filter((e) => !PLACE_ONLY.has(e) || PLACE_ENTRIES.get(e) === 'country' || ((e.frequency ?? -Infinity) >= minZipf && !words.has(e.word.toLowerCase())))
+  }
+  const places = entries.filter((e) => PLACE_ENTRIES.has(e))
+  if (config.placeNames) console.log(`Place names: ${places.length} (${places.filter((e) => PLACE_ENTRIES.get(e) === 'country').length} countries)`)
   const byWord = new Map<string, Entry[]>()
   for (const e of entries) byWord.set(e.word, [...(byWord.get(e.word) ?? []), e])
   const english =

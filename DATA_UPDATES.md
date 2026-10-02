@@ -11,13 +11,14 @@ added by hand.
 <!-- rows:start -->
 | Language | Code | Wiktionary data of | Downloaded | Entries |
 |---|---|---|---|---|
-| English | `en` | 2026-09-25 | 2026-09-27 | 594,544 |
+| English | `en` | 2026-09-25 | 2026-09-27 | 599,081 |
 | Vietnamese | `vi` | 2026-09-28 | 2026-10-02 | 35,394 |
 <!-- rows:end -->
 
 ## History
 
 <!-- history -->
+- 2026-10-02: English rebuilt with place names (countries, and common cities and regions): 599,081 entries (was 594,544). Vietnamese place names are indexed for English search.
 - 2026-10-02: Vietnamese updated to Wiktionary data of 2026-09-28 (was 2026-09-25), 35,394 entries.
 - 2026-09-30: English and Vietnamese data published to npm as 0.1.0 (built from these dumps).
 - 2026-09-27: Vietnamese added, Wiktionary data of 2026-09-25, 35,394 entries.

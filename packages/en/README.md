@@ -28,7 +28,7 @@ US, UK, Ireland, Canada, Australia, New Zealand, South Africa, India, Pakistan, 
 
 English Wiktionary has about 1.5 million entries (3.3 GB), so this package keeps what learners and the translator need:
 
-- Up to two-word headwords ("ice cream", "going to"); no proper names, symbols or proverbs.
+- Up to two-word headwords ("ice cream", "going to"); no symbols or proverbs. Proper names only as places: every country, and about 4,200 common cities and regions ("Japan", "Tokyo"), so other languages' place names translate to English.
 - No purely technical entries (every sense is biology, law, chemistry, …), and no obsolete or archaic senses.
 - Every sense of a word is kept (no cap), with long definitions shortened and one example sentence per sense.
 - **Irregular forms only** (*said*, *went*, *better*, *was*). Regular forms (*walked*, *cities*, *running*) are left out; the translator undoes them by rule (`regularBaseForms`).

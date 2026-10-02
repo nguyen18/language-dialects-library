@@ -18,6 +18,14 @@ export type LanguageConfig = {
   /** Parts of speech to leave out entirely. */
   skipPos?: string[]
   /**
+   * Place names (Wiktionary's place categories: "Countries in Asia", "Cities in Japan") to keep, and to
+   * index for English search, so "Japan" ↔ "Nhật Bản" translate. Other proper-name senses (given names,
+   * surnames) are never indexed. When 'name' is in skipPos, only place senses of names are kept, and
+   * places that aren't countries only when at least `minZipf` common (with wordfreq), so a large language
+   * doesn't fill with villages and rivers.
+   */
+  placeNames?: { minZipf?: number }
+  /**
    * Leave out inflected-form senses (Wiktionary "form-of", e.g. "plural of dog", "simple past of walk").
    * They're most of a heavily inflected language's entries and aren't how learners look words up.
    */
