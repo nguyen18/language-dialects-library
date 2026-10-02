@@ -221,6 +221,12 @@ describe('checker (real Vietnamese data)', { skip: !built && 'build en and vi da
     // one meant ("shopping"), even in accented text.
     assert.deepEqual(await fixes('Hôm nay tôi đi mua sam.'), ['mua sam→mua sắm'])
     assert.deepEqual(await fixes('Tôi đi nha sach.'), ['nha sach→nhà sách'])
+    // A word with no accents at all was probably typed without them, even when its syllables are common:
+    // "nha bang" is "nhà băng" (bank), "nha hang" "nhà hàng" (restaurant); "nha tho" could be "nhà thơ" (poet)
+    // or "nhà thờ" (church), so it's left alone.
+    assert.deepEqual(await fixes('Tôi đi nha bang.'), ['nha bang→nhà băng'])
+    assert.deepEqual(await fixes('Tôi đi nha hang với má.'), ['nha hang→nhà hàng'])
+    assert.deepEqual(await fixes('Tôi đi nha tho.'), [])
     // Common words written without accents stay ("cho con" isn't "chó con"), and so do runs that could be
     // two words equally ("ban an": bản án or bàn ăn).
     assert.deepEqual(await fixes('Mẹ cho con đi chơi.'), [])

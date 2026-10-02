@@ -169,8 +169,10 @@ const COMPOUND_MAX_COMBINATIONS = 64
 // its accented form is suggested only if one dictionary word clearly wins: ahead of the next by this many
 // Zipf points ("ban an" could be "bản án" or "bàn ăn", equally common, so it's left alone).
 const PLAIN_RUN_MARGIN = 0.5
-// And only syllables less common than this (Zipf) may change that way: common words written without
-// accents are usually meant ("tháng sau", next month, isn't "tháng sáu", June; "cho con" stays).
+// In a run that has accents elsewhere, only syllables less common than this (Zipf) may change that way: a
+// common word left without accents next to accented ones is usually meant ("tháng sau", next month, isn't
+// "tháng sáu", June). A run with no accents at all ("nha bang") was probably typed without them, so any of
+// its syllables may change ("nhà băng", bank), still only when one word clearly wins.
 const PLAIN_RUN_MAX_ZIPF = 5
 
 async function spelling(ctx: Context): Promise<CheckIssue[]> {
@@ -222,7 +224,8 @@ async function spelling(ctx: Context): Promise<CheckIssue[]> {
         const span = sentence.units.slice(i, i + k)
         if (span.some((u, j) => !loneSet.has(u) || covered.has(u) || (j > 0 && !joined(ctx.text, span[j - 1], u)))) continue
         const doubtful = span.some(suspect)
-        const rarePlain = (u: Unit) => plainWords.has(u) && (syllables[lowerOf(u)] ?? 0) < PLAIN_RUN_MAX_ZIPF
+        const allPlain = span.every(isPlain)
+        const rarePlain = (u: Unit) => plainWords.has(u) && (allPlain || (syllables[lowerOf(u)] ?? 0) < PLAIN_RUN_MAX_ZIPF)
         const mayChange = (u: Unit) => suspect(u) || rarePlain(u)
         if (!doubtful && !span.some(rarePlain)) continue
         const written = span.map(lowerOf)
