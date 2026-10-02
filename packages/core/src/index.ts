@@ -1,4 +1,5 @@
 import {
+  PERSONAL_NAME,
   PRONOUN_PERSONS,
   fromStored,
   normalizeEnglish,
@@ -240,10 +241,19 @@ export function createDictionary(options: DictionaryOptions): Dictionary {
         perUnit: parts.length === 1 ? VARIANT_FORMS_ONE_SYLLABLE : VARIANT_FORMS_PER_SYLLABLE,
         max: MAX_VARIANT_COMBINATIONS,
       }).filter((c) => c !== written)
-      const found = await Promise.all(combos.map(async (c) => ({ word: c, entries: await lookup(c) })))
+      // Each form as written in lowercase and capitalized, for names ("nhat" → "Nhật", Japan; "nhat ban" →
+      // "Nhật Bản").
+      const forms = [...new Set(combos.flatMap((c) => [c, c.replace(/(^|\s)(\S)/gu, (_, sep: string, ch: string) => sep + ch.toUpperCase())]))]
+      // A capitalized form counts when it's its own headword (lookup ignores case) and more than a person's
+      // name (a place, a people), so given names don't crowd out words.
+      const found = (await Promise.all(forms.map(async (c) => ({ word: c, entries: await lookup(c) })))).map((v) =>
+        v.word === v.word.toLowerCase()
+          ? v
+          : { ...v, entries: v.entries.filter((e) => e.word === v.word && e.senses.some((s) => !PERSONAL_NAME.test(s.glosses[0] ?? ''))) },
+      )
       const frequency = (v: { word: string; entries: Entry[] }) => {
         const known = v.entries.map((e) => e.frequency).filter((f): f is number => f !== undefined)
-        return known.length ? Math.max(...known) : parts.length === 1 ? list[v.word] || undefined : undefined
+        return known.length ? Math.max(...known) : parts.length === 1 ? list[v.word.toLowerCase()] || undefined : undefined
       }
       // Most common first; ties (and unknown frequencies) keep the order of more common syllable forms.
       return found

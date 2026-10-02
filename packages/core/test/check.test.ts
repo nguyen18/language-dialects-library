@@ -293,6 +293,9 @@ describe('checker (real Vietnamese data)', { skip: !built && 'build en and vi da
     const vi = createDictionary({ lang: 'vi', load: async (p) => JSON.parse(await readFile(join(root, 'vi', 'data', p), 'utf8')) })
     assert.deepEqual((await vi.segment('Hôm nay tôi ăn cơm.')).map((w) => w.text), ['Hôm nay', 'tôi', 'ăn cơm'])
     assert.equal((await vi.variants('hom nay'))[0]?.word, 'hôm nay')
+    // Names too, capitalized: "nhat" can be Japan, "nhat ban" is.
+    assert.ok((await vi.variants('nhat')).some((v) => v.word === 'Nhật'))
+    assert.equal((await vi.variants('nhat ban'))[0]?.word, 'Nhật Bản')
     assert.deepEqual((await vi.variants('muộn', { limit: 3 })).map((v) => v.word), ['muốn', 'mượn', 'muôn'])
   })
 

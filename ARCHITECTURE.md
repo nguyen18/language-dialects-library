@@ -276,7 +276,8 @@ The owner found "nhat"/Nhật didn't translate to Japan. Audit: no country trans
 - **`withoutNotes`** (types.ts, used by `glossTerms`): removes nested parentheses and a note left open by a cut-off gloss. *Hàn Quốc*'s "South Korea (a country …; official name: Đại Hàn Dân Quốc (“Republic of Korea”))" gave no term before (the single-pass regex left "official name: …", and the colon rule kept only that).
 - **Results** (en → vi | vi → en): Japan → Nhật Bản, Nhật, Nhật Bổn | Nhật Bản, Nhật → Japan; South Korea → Hàn Quốc, Nam Hàn | Hàn Quốc → South Korea; France → Pháp | Pháp → France; likewise Vietnam, China, Thailand, Laos, Cambodia, Taiwan, India, Germany, Russia, Italy, Spain, Mexico, Australia, United States (Mỹ, Mĩ, nước Mỹ), England (Anh).
 - **Checker side effects** (1,334 dictionary example sentences): place names in Vietnamese text now get translated (*Kyoto* → *Kinh Đô*, *Virginia* → *Vơ-gi-ni-a* instead of *âm đạo*). One new unhelpful flag: *Hughes* (a person; also an Australian place) is read as English with no translation, so the journal review lists it as unchecked.
-- Tests: country names both ways, *Nhật* offered for Japan, *hoàng bào*/*Vinh* not, *Hàn Quốc* → South Korea (71 tests).
+- **`dictionary.variants`** (what the owner hit: "nhat" typed without accents): also tries each accent combination title-cased (*nhat* → *Nhật*; *nhat ban* → *Nhật Bản*). `lookup` ignores case, so a capitalized form must be its own headword (otherwise *Nhất* came back as *nhất*), and one with only personal-name senses (`PERSONAL_NAME`, now shared in types.ts) is left out. Checker results unchanged.
+- Tests: country names both ways, *Nhật* offered for Japan, *hoàng bào*/*Vinh* not, *Hàn Quốc* → South Korea, variants of *nhat* / *nhat ban* (71 tests).
 - Not done (owner: "focus on the country translations"): nationality phrases, *món Nhật* "Japanese food". Noted in FUTURE_IMPROVEMENTS.md.
 
 ## Pronoun table (added 2026-09-30)

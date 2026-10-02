@@ -339,6 +339,9 @@ export function displayGloss(glosses: string[]): string {
 // Trailing words dropped to also match the bare verb: "wait for" is found by "wait" too.
 export const TRAILING_PARTICLE = / (for|to|at|on|with|about|of|in|into|up|out|off|over)$/
 
+/** Definitions of personal names ("a male given name from Chinese", "a surname"), which aren't translated. */
+export const PERSONAL_NAME = /\b(?:given name|surname|family name|patronymic|nickname)\b/i
+
 /**
  * A definition without its parenthesized notes, nested ones too ("South Korea (a country …; official name:
  * Đại Hàn Dân Quốc (“Republic of Korea”))" → "South Korea"), and a note left open by a cut-off definition.
