@@ -103,6 +103,20 @@ for obtain) and affects every common English word (*run*, *take*, *make*, *go*, 
 **Suggested approach:** revisit with the top-100 comparison, alone and after picks exist. Related noise:
 English bridge words with two meanings (*do* "To perform; to execute" → *tử hình*, execute = put to death).
 
+## Place names and nationality phrases
+
+Place names translate both ways since 2026-10-02 (*Japan* ↔ *Nhật Bản*). Next:
+
+- **Nationality phrases:** Vietnamese puts the thing first and the country's short name after it: *món
+  Nhật* (Japanese food), *tiếng Nhật* (Japanese, the language), *người Nhật* (a Japanese person). English
+  "Japanese" already gives *Nhật* (an adjective in the data); a phrase rule (English adjective + noun →
+  Vietnamese noun + short name, with the usual head word per thing: *món* for food, *tiếng* for
+  language, *người* for people) would build them both ways. Keep it per-language, like frames.
+- **Places that are also surnames** (*Hughes*) are read as English places in Vietnamese text; the
+  checker could leave capitalized words with no translation alone.
+- **Loose matches** still listed for some countries: *gà trống Gô-loa* (the Gallic rooster) for France,
+  *nga ngố* (a Russian, slang) for Russia; they come from Wiktionary's translation tables.
+
 ## Grammar checker
 
 The first version (2026-10-01) checks spelling and accents, words from another region, pronouns against

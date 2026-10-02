@@ -33,6 +33,8 @@ const config: LanguageConfig = {
   },
   // Chinese characters (chữ Hán/chữ Nôm) and romanizations aren't words a learner looks up.
   skipPos: ['character', 'romanization'],
+  // Place names are indexed for English search ("Japan" → "Nhật Bản"); given names aren't.
+  placeNames: {},
   keepWord: (word) => /[a-zA-ZÀ-ỹđĐ]/.test(word),
   // wordfreq only has a "small" Vietnamese list (the most common ~25k tokens, which are syllables).
   wordfreq: 'small',

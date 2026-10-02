@@ -288,6 +288,20 @@ describe('translator (real data)', { skip: !built && 'build en and vi data first
     assert.ok((await top('heo', { from: 'vi', fromRegion: 'Southern', to: 'en' })).includes('pig'))
   })
 
+  it('translates country names both ways', async () => {
+    for (const [en, vi] of [['Japan', 'Nhật Bản'], ['France', 'Pháp'], ['Germany', 'Đức'], ['Thailand', 'Thái Lan'], ['India', 'Ấn Độ'], ['Vietnam', 'Việt Nam']]) {
+      assert.equal((await top(en, { from: 'en', to: 'vi' }))[0], vi, en)
+      assert.equal((await top(vi, { from: 'vi', to: 'en' }))[0], en, vi)
+    }
+    // The short name too, and nothing that only mentions the country in its definition.
+    const japan = await top('Japan', { from: 'en', to: 'vi' })
+    assert.ok(japan.includes('Nhật'))
+    assert.ok(!japan.includes('hoàng bào'))
+    assert.ok(!(await top('Vietnam', { from: 'en', to: 'vi' })).includes('Vinh'))
+    // Names of several words: "South Korea", not "South korea".
+    assert.ok((await tr.translate('Hàn Quốc', { from: 'vi', to: 'en' })).some((g) => g.translations[0]?.word === 'South Korea'))
+  })
+
   it('translates between dialects of one language', async () => {
     assert.equal((await top('ngô', { from: 'vi', fromRegion: 'Northern', to: 'vi', toRegion: 'Southern' }))[0], 'bắp')
     assert.ok((await top('truck', { from: 'en', fromRegion: 'US', to: 'en', toRegion: 'UK' })).includes('lorry'))

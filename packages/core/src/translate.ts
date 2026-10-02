@@ -21,6 +21,7 @@ import {
   type PronounRow,
   type Sense,
   type TableTranslation,
+  withoutNotes,
 } from './types.ts'
 import {
   createDictionary,
@@ -422,6 +423,13 @@ function bridgeTerms(sense: SourceSense, from: string): { terms: string[]; synon
   // Main terms get the full "main meaning" bonus: the English word itself, and the first term of the
   // definition ("will": "Used to express the future tense" → "future tense", which is what "sẽ" means).
   const main = new Set<string>()
+  // An English place name is its own bridge: "Japan" finds "Nhật Bản" (defined "Japan (a country in East
+  // Asia)"). Its definition describes it ("A country in East Asia. Capital and largest city: Tokyo.") and
+  // would find other places.
+  if (from === 'en' && sense.pos === 'name') {
+    const name = normalizeEnglish(sense.lemma)
+    return { terms: [name], synonymsFrom: 1, main: new Set([name]) }
+  }
   if (from === 'en') {
     terms.push(normalizeEnglish(sense.lemma))
     main.add(normalizeEnglish(sense.lemma))
@@ -452,6 +460,14 @@ function bridgeTerms(sense: SourceSense, from: string): { terms: string[]; synon
     }
   }
   return { terms: unique.slice(0, 8), synonymsFrom, main }
+}
+
+// Whether a definition is of the place `name` itself: it starts with the name, notes aside ("Japan (a
+// country in East Asia)"), or is a short list of equivalents including it ("Japano-; Nippo-; Japan").
+function namesPlace(gloss: string, name: string): boolean {
+  const text = normalizeEnglish(withoutNotes(gloss))
+  if (text === name || new RegExp(`^${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?=[\\s,;:.]|$)`).test(text)) return true
+  return isTermList(gloss, glossTerms(gloss).length) && glossTerms(gloss).some(([t]) => t === name)
 }
 
 // Every comma/semicolon part of the definition became a term, and each is at most three words.
@@ -568,8 +584,11 @@ export function createTranslator(options: TranslatorOptions = {}): Translator {
     const hits: Hit[] = []
     // Terms are lowercase, so the capitalized word too ("i" is the letter; the pronoun is "I"). When the
     // exact part of speech is there, other compatible ones are left out (the letter "i" for pronoun "I").
+    // Names of several words are capitalized throughout ("South Korea", "United Kingdom").
     const capitalized = term.charAt(0).toUpperCase() + term.slice(1)
-    let entries = [...(await en.lookup(term)), ...(capitalized !== term ? await en.lookup(capitalized) : [])]
+    const titled = term.replace(/(^|[ -])([a-z])/g, (_, sep: string, c: string) => sep + c.toUpperCase())
+    const forms = [...new Set([term, capitalized, titled])]
+    let entries = (await Promise.all(forms.map((f) => en.lookup(f)))).flat()
     const usable = (s: Sense) => !s.altOf && intersects(s.regions, wanted) && !s.labels.some((l) => exclude.includes(l))
     if (entries.some((e) => e.pos === posList[0] && e.senses.some(usable))) entries = entries.filter((e) => e.pos === posList[0])
     for (const entry of entries) {
@@ -794,6 +813,7 @@ export function createTranslator(options: TranslatorOptions = {}): Translator {
           continue
         }
         const posList = compatiblePos(sense.pos)
+        const placeName = from === 'en' && sense.pos === 'name' && to !== 'en'
         const context = contentWords(`${sense.glosses.join(' ')} ${meaning ?? ''}`)
         const scored = new Map<string, Translation>()
         const keep = (hit: Hit, score: number, bridgeTerm: string) => {
@@ -833,6 +853,11 @@ export function createTranslator(options: TranslatorOptions = {}): Translator {
           const wordRank = new Map<string, number>()
           for (const h of hits) if (!wordRank.has(h.word)) wordRank.set(h.word, wordRank.size)
           hits.forEach((hit) => {
+            // An English place name matches a word that means that place: a definition starting with the
+            // name ("Japan (a country in East Asia)"), a short list ("Nhật": "Japano-; Nippo-; Japan"), or a
+            // spelling of such a word; not a definition that mentions it ("hoàng bào": a robe worn by the
+            // emperors of China, Japan, Korea and Vietnam; "Vinh": the provincial capital of …, Vietnam).
+            if (placeName && !hit.altOf && !namesPlace(hit.gloss, term)) return
             const rank = wordRank.get(hit.word)!
             // Translating between dialects of one language: the word itself only counts if it's tagged for the target region.
             if (to === from && hit.word === sense.lemma && toWanted && !hit.regionTagged) return

@@ -82,6 +82,9 @@ const config: LanguageConfig = {
   // English Wiktionary is huge (1.5 million entries, 3.3 GB), so it's trimmed to what learners and
   // the translator need.
   skipPos: ['name', 'symbol', 'character', 'punct', 'infix', 'interfix', 'circumfix', 'proverb'],
+  // Names are skipped, but not places: countries, and common cities and regions (about 7,000), so other
+  // languages' place names translate to English ("Nhật Bản" → "Japan").
+  placeNames: { minZipf: 3 },
   // Up to two words ("ice cream", "going to"), no longer phrases.
   keepWord: (word) => word.trim().split(/\s+/).length <= 2,
   // Specialist vocabulary (every sense is biology, law, chemistry…) isn't what learners translate.

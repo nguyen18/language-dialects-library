@@ -340,6 +340,19 @@ export function displayGloss(glosses: string[]): string {
 export const TRAILING_PARTICLE = / (for|to|at|on|with|about|of|in|into|up|out|off|over)$/
 
 /**
+ * A definition without its parenthesized notes, nested ones too ("South Korea (a country …; official name:
+ * Đại Hàn Dân Quốc (“Republic of Korea”))" → "South Korea"), and a note left open by a cut-off definition.
+ */
+export function withoutNotes(gloss: string): string {
+  let text = gloss
+  for (let previous = ''; previous !== text; ) {
+    previous = text
+    text = text.replace(/\([^()]*\)/g, ' ')
+  }
+  return text.replace(/\([^)]*$/, ' ')
+}
+
+/**
  * Splits an English gloss into search terms, main meaning first: "now, today, this time" ->
  * [["now", 0], ["today", 1], ["this time", 2]]. Parenthesized notes and final punctuation are dropped.
  * When a gloss explains before a colon ("Negates the meaning of the modified verb: not"), only the
@@ -350,7 +363,7 @@ export function glossTerms(gloss: string): [string, number][] {
   // express the future tense" (English "will"). The phrase after marks/expresses/indicates/denotes is
   // their meaning, so it's a term too, placed after the gloss's own terms.
   const grammar = [...gloss.matchAll(GRAMMAR_PHRASE)].map((m) => normalizeEnglish(m[1])).filter((t) => t.split(' ').length <= 3)
-  let cleaned = gloss.replace(/\([^)]*\)/g, ' ').replace(/[“”"]/g, '')
+  let cleaned = withoutNotes(gloss).replace(/[“”"]/g, '')
   if (cleaned.includes(':')) cleaned = cleaned.slice(cleaned.lastIndexOf(':') + 1)
   const terms: [string, number][] = []
   let position = 0
