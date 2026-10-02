@@ -92,12 +92,13 @@ export function syllablesByPlain(syllables: Record<string, number>): Map<string,
 export function accentCombinations(
   written: string[],
   byPlain: Map<string, string[]>,
-  { fixed = [], perUnit, max }: { fixed?: boolean[]; perUnit: number; max: number },
+  { fixed = [], forms: given = [], perUnit, max }: { fixed?: boolean[]; forms?: (string[] | undefined)[]; perUnit: number; max: number },
 ): string[] {
   const choices = written.map((w, i) => {
     const lower = w.toLowerCase()
     if (fixed[i]) return [lower]
-    const forms = (byPlain.get(plain(lower)) ?? []).slice(0, perUnit)
+    // `forms[i]`, when given, replaces the accent forms (e.g. spellingCandidates, with letter changes too).
+    const forms = (given[i] ?? byPlain.get(plain(lower)) ?? []).slice(0, perUnit)
     return forms.includes(lower) ? forms : [...forms, lower]
   })
   // Every combination with the sum of its forms' ranks: lower sums are made of more common forms.
@@ -109,4 +110,75 @@ export function accentCombinations(
     .sort((a, b) => a.rank - b.rank)
     .slice(0, max)
     .map((c) => c.words.join(' '))
+}
+
+// The letters a plain-letter typo can be changed to (accents come from the syllable list afterwards).
+const LETTERS = 'abcdefghijklmnopqrstuvwxyz'
+// A syllable's accent marks, as a multiset of combining characters ("muốn": circumflex, acute).
+const marksOf = (s: string) => [...s.normalize('NFD')].filter((c) => /\p{M}/u.test(c))
+
+/**
+ * The syllables a misspelled one could be, best first: the same letters with other accents ("khong" →
+ * "không"), and one letter changed: missing, extra, wrong or two swapped ("khôg", "khôngg" → "không";
+ * "tihch" → "thích"; "ơm" → "ơn"), each with any accents. First, same-letter fixes keeping every accent mark
+ * the writer typed ("ngừoi" → "người": the marks were on the wrong letter). Then candidates keeping more of
+ * the writer's marks ("muốm" → "muốn", not "muỗm"; "ơm" → "ơn", not "ôm"); then accent-only fixes, then changes between
+ * letters often confused (`similar`: groups like "ckq", counted as half a change: "họk" → "học", not "họ"),
+ * then other letter changes, then the more common syllable. Letter changes only give syllables at least
+ * `minZipf` common. `edits` is 0, 0.5 or 1; `marks` how well the writer's accent marks are kept.
+ */
+export function spellingCandidates(
+  written: string,
+  syllables: Record<string, number>,
+  byPlain: Map<string, string[]>,
+  { limit, minZipf = 3, similar = [] }: { limit: number; minZipf?: number; similar?: string[] },
+): { word: string; edits: number; marks: number }[] {
+  const lower = written.toLowerCase()
+  const base = plain(lower)
+  const alike = (x: string, y: string) => similar.some((g) => g.includes(x) && g.includes(y))
+  // Each one-letter change of the plain letters, with its cost: half for letters often confused.
+  const variants = new Map<string, number>()
+  const add = (v: string, cost: number) => {
+    if (v !== base && cost < (variants.get(v) ?? Infinity)) variants.set(v, cost)
+  }
+  for (let i = 0; i <= base.length; i++) {
+    const [a, b] = [base.slice(0, i), base.slice(i)]
+    if (b) add(a + b.slice(1), 1)
+    if (b.length > 1) add(a + b[1] + b[0] + b.slice(2), 1)
+    for (const c of LETTERS) {
+      if (b) add(a + c + b.slice(1), alike(b[0], c) ? 0.5 : 1)
+      add(a + c + b, 1)
+    }
+  }
+  const found = new Map<string, number>()
+  for (const w of byPlain.get(base) ?? []) if (w !== lower) found.set(w, 0)
+  for (const [v, cost] of variants) {
+    for (const w of byPlain.get(v) ?? []) {
+      if ((syllables[w] ?? 0) >= minZipf && cost < (found.get(w) ?? Infinity)) found.set(w, cost)
+    }
+  }
+  const mine = marksOf(lower)
+  // How a candidate keeps the writer's marks: how many it shares, and a score where missing or extra marks
+  // count down (0 when the writer typed none, so plain-letter writing isn't held against any candidate).
+  const keep = (w: string) => {
+    const left = marksOf(w)
+    let shared = 0
+    for (const m of mine) {
+      const at = left.indexOf(m)
+      if (at >= 0) {
+        shared++
+        left.splice(at, 1)
+      }
+    }
+    return { all: shared === mine.length, score: mine.length ? shared - (mine.length - shared) - left.length : 0 }
+  }
+  return [...found]
+    .map(([word, edits]) => {
+      const k = keep(word)
+      // Tier 0: same letters, every typed mark kept (accents only moved or added).
+      return { word, edits, tier: edits === 0 && k.all ? 0 : 1, marks: k.score, zipf: syllables[word] ?? 0 }
+    })
+    .sort((a, b) => a.tier - b.tier || b.marks - a.marks || a.edits - b.edits || b.zipf - a.zipf)
+    .slice(0, limit)
+    .map(({ word, edits, tier, marks }) => ({ word, edits, marks: marks - tier * 100 }))
 }

@@ -12,12 +12,13 @@ added by hand.
 | Language | Code | Wiktionary data of | Downloaded | Entries |
 |---|---|---|---|---|
 | English | `en` | 2026-09-25 | 2026-09-27 | 594,544 |
-| Vietnamese | `vi` | 2026-09-25 | 2026-09-27 | 35,394 |
+| Vietnamese | `vi` | 2026-09-28 | 2026-10-02 | 35,394 |
 <!-- rows:end -->
 
 ## History
 
 <!-- history -->
+- 2026-10-02: Vietnamese updated to Wiktionary data of 2026-09-28 (was 2026-09-25), 35,394 entries.
 - 2026-09-30: English and Vietnamese data published to npm as 0.1.0 (built from these dumps).
 - 2026-09-27: Vietnamese added, Wiktionary data of 2026-09-25, 35,394 entries.
 - 2026-09-27: English added, Wiktionary data of 2026-09-25, 594,544 entries.

@@ -4,7 +4,16 @@ import { readFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { describe, it } from 'node:test'
 import { fileURLToPath } from 'node:url'
-import { createChecker, createDictionary, type CheckerConfig, type LanguageMeta, type StoredEntry, type StoredPronounRow } from '../src/index.ts'
+import {
+  createChecker,
+  createDictionary,
+  spellingCandidates,
+  syllablesByPlain,
+  type CheckerConfig,
+  type LanguageMeta,
+  type StoredEntry,
+  type StoredPronounRow,
+} from '../src/index.ts'
 
 // A tiny fake language written in syllables, to test each rule without the real data. Regions North and
 // South; "lon" is North's word for pig and "heo" South's; "ket qua" is one word ("result"), while "qua"
@@ -57,6 +66,31 @@ const files: Record<string, unknown> = {
 
 // Every opt-in check on, for testing them (by default only the spellchecker runs).
 const ALL_CHECKS = { dialect: true, 'pronoun-relationship': true, 'pronoun-pair': true, 'pronoun-consistency': true, 'polite-ending': true }
+
+describe('spellingCandidates', () => {
+  const syllables = { 'không': 7, 'khống': 4, 'khô': 5, 'học': 6, 'họ': 6.5, 'ơn': 5.5, 'ôm': 5, 'muốn': 6, 'muỗm': 2, 'người': 6.8, 'ngời': 3.5, 'thích': 6, 'tích': 5 }
+  const byPlain = syllablesByPlain(syllables)
+  const best = (w: string, similar: string[] = []) => spellingCandidates(w, syllables, byPlain, { limit: 3, similar }).map((c) => c.word)
+
+  it('fixes accents first, then one-letter typos', () => {
+    assert.equal(best('khong')[0], 'không')
+    assert.equal(best('khôg')[0], 'không')
+    assert.equal(best('khôngg')[0], 'không')
+    assert.equal(best('tihch')[0], 'thích')
+  })
+
+  it('keeps the accent marks the writer typed', () => {
+    // "ngừoi": the marks were on the wrong letter; same letters, every mark kept.
+    assert.equal(best('ngừoi')[0], 'người')
+    assert.equal(best('ơm')[0], 'ơn')
+    assert.equal(best('muốm')[0], 'muốn')
+  })
+
+  it('counts letters often confused as half a change', () => {
+    assert.equal(best('họk')[0], 'họ')
+    assert.equal(best('họk', ['ckq'])[0], 'học')
+  })
+})
 
 describe('checker (fake data)', () => {
   const checker = createChecker({ load: () => async (p) => files[p] })
@@ -203,6 +237,17 @@ describe('checker (real Vietnamese data)', { skip: !built && 'build en and vi da
     ])
     const { parts } = await spell('Hôm nay tôi đi market với má.')
     assert.deepEqual(parts.map((p) => p.lang), ['vi', 'en', 'vi'])
+  })
+
+  it('fixes letter typos, keeping correct words, names, abbreviations and other scripts', async () => {
+    assert.deepEqual(await fixes('Tôi khôg biết.'), ['khôg→không'])
+    assert.deepEqual(await fixes('Tôi đi họk.'), ['họk→học'])
+    assert.deepEqual(await fixes('Tôi tihch ăn phở.'), ['tihch→thích'])
+    assert.deepEqual(await fixes('Tôi muốm ăn.'), ['muốm→muốn'])
+    // A word with its neighbors: "cảm ơn", not "cảm ôm".
+    assert.deepEqual(await fixes('Cảm ơm bạn.'), ['Cảm ơm→Cảm ơn'])
+    assert.deepEqual(await fixes('Bộ GĐ-ĐT đã công bố.'), [])
+    assert.deepEqual(await fixes('Chữ 詩 là thơ.'), [])
   })
 
   it('suggests accents for rare plain-letter words, more readily in text typed without accents', async () => {

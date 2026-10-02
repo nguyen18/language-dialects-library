@@ -130,6 +130,9 @@ const config: LanguageConfig = {
     politeEndings: ['ạ'],
     // English words Vietnamese has no word for: no articles, so they're left out, not translated.
     leaveOut: ['the', 'a', 'an'],
+    // Letters often confused: c/k/q and s/x sound alike, i/y are interchangeable in many words, m/n are
+    // next to each other and both end syllables ("ơm" for "ơn").
+    similarLetters: ['ckq', 'sx', 'iy', 'mn'],
   },
   // How to say "I", "you", "he/she", "we", plural "you" and "they" depending on who you're talking to
   // (or about). Picks with a `gloss` are pronoun definitions from the data ("you, my father"); rules are

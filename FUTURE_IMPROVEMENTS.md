@@ -109,6 +109,13 @@ The first version (2026-10-01) checks spelling and accents, words from another r
 the listener, I/you pronoun pairs and polite endings. Since the same day it's a **spellchecker by
 default** (spelling, and English words translated); the other checks are opt-in. Next, roughly in order:
 
+- **Texting shorthand** (*ko* → không, *dc*/*đc* → được, *j* → gì, *bít* → biết, *mún* → muốn, *hok*):
+  a per-language list in the checker settings, suggested with a note ("texting form of không") rather
+  than corrected, since some write that way on purpose ("option 2", 2026-10-02).
+- **Typos that make another real syllable** (*kông*, *mún*): letter fixes only apply to non-syllables;
+  catching these needs context (the words around it) or the shorthand list.
+- **Rare and literary syllables** missing from the syllable list are flagged (*ngổ*, *hiếc*, *trợt* in the
+  dictionary's own examples); adding syllables from example sentences would cut these false alarms.
 - **Word-by-word translation reads like English:** "it was very expensive" → *nó là rất mắc* (natural:
   *mắc quá*). More clause frames ("it was {quality}" with intensifiers, "because …", "and then …") and
   slot values translated word by word inside frames ("very happy") would cover common cases.
