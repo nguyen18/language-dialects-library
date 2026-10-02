@@ -422,6 +422,10 @@ const config: LanguageConfig = {
       note: 'The neutral "very"; "quá" is closer to "so, too".',
     },
     {
+      word: 'excited', pos: 'adj', gloss: /^Having great enthusiasm, passion and energy/, picks: ['hào hứng', 'háo hức', 'phấn khích', 'hứng khởi'],
+      note: 'hào hứng is the everyday "excited about" (most common of these); háo hức is looking forward to something, phấn khích thrilled in the moment. The ranking put tích cực (active, proactive) first: its definition shares "great energy, enthusiasm".',
+    },
+    {
       word: 'of', pos: 'prep', gloss: /^Belonging to, existing in, or taking place in/, picks: ['của'], first: true,
       note: 'Possession ("the book of my friend": sách của bạn tôi); the first-listed meanings are distance and separation.',
     },

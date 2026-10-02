@@ -226,6 +226,12 @@ async function readEntries(file: string, config: LanguageConfig): Promise<Entry[
         regionTagged: tagged.length > 0,
         labels: tags.filter((t) => LABELS.has(t)),
       }
+      // Never on an entry's first sense: that's its main meaning, technical or not ("gold" the metal,
+      // "circle" the shape); only later senses are moved after everyday ones.
+      for (const { label, topics, gloss } of senses.length ? (config.senseLabels ?? []) : []) {
+        const match = (topics && s.topics?.some((t) => topics.includes(t))) || (gloss && glosses.some((g) => gloss.test(g)))
+        if (match && !sense.labels.includes(label)) sense.labels.push(label)
+      }
       const altOf = s.alt_of?.[0]?.word ?? s.form_of?.[0]?.word
       if (altOf) sense.altOf = altOf
       const synonyms = [...new Set((s.synonyms ?? []).map((x) => x.word).filter((w) => w && w !== raw.word))]

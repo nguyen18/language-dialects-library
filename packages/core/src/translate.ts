@@ -309,6 +309,10 @@ const INFLECTION_VIA = /\b(?:past|participle|plural|singular|present|third-perso
 // Everyday speech, not slang: a form's own colloquial meaning ("got": "Have/has.") isn't marginal.
 const EVERYDAY_LABELS = new Set(['informal', 'colloquial'])
 const LABEL_PENALTY = new Set(['slang', 'Internet', 'humorous', 'literary', 'dialectal', 'uncommon', 'rare', 'euphemistic'])
+// Senses with any of these labels (added by the data build, LanguageConfig.senseLabels) rank after
+// everyday and marginal ones: specialist ("excited": "in a state of higher energy", physics) and sexual
+// meanings, which a learner rarely means and shouldn't see first.
+const LATER_LABELS = new Set(['technical', 'sexual'])
 
 // A target gloss that lists the bridge term itself as an equivalent ("muốn": "to want"; "má": "mother;
 // mom") is a plain translation, but a short gloss can't earn definition overlap, since the term's own
@@ -1069,6 +1073,7 @@ export function createTranslator(options: TranslatorOptions = {}): Translator {
         }
         return marginal ? -1 : 0
       }
+      const later = (g: TranslationGroup) => (g.source.labels.some((l) => LATER_LABELS.has(l)) ? 2 : 0)
       const relevance = (g: TranslationGroup) =>
         (meaningWords
           ? 10 * meaningOverlap(meaningWords, g.source.glosses.join(' ')) + 5 * meaningOverlap(meaningWords, g.translations[0]?.gloss ?? '')
@@ -1076,7 +1081,8 @@ export function createTranslator(options: TranslatorOptions = {}): Translator {
         (ownSenses && g.source.via && SPELLING_VIA.test(g.source.via) ? 2 : 0) +
         (fromRegion && g.source.regionTagged ? 3 : 0) +
         pronounRelevance(g) +
-        labelRelevance(g) +
+        labelRelevance(g) -
+        later(g) +
         (!meaning && pickedFirst.has(g.source) ? 5 : 0)
       // A sense with no translations says nothing, so it goes after the ones that do ("got": "Expressing
       // obligation; used with have." finds nothing; "Must; have/has (to)." gives "phải").

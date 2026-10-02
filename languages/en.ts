@@ -96,6 +96,19 @@ const config: LanguageConfig = {
   // so only irregular ones ("said", "went", "better") are stored.
   keepFormOf: (form, lemma) => !isRegularForm(form.toLowerCase(), lemma.toLowerCase()),
   dropLabels: ['obsolete', 'archaic'],
+  // Meanings listed after everyday ones, for every target language: specialist science and maths ones
+  // (Wiktionary topics; a narrow list, since topics also mark everyday meanings: "bank" has finance,
+  // "plant" biology), and sexual ones, by definition, since Wiktionary seldom labels them ("excited":
+  // "Having an erection", "Sexually aroused" came right after "Having great enthusiasm").
+  senseLabels: [
+    {
+      label: 'technical',
+      // Specific fields only: Wiktionary adds each topic's parents, so a software meaning also carries
+      // "mathematics" and "physical-sciences" ("release": the distribution of a software version).
+      topics: ['physics', 'chemistry', 'electromagnetism', 'quantum-mechanics', 'nuclear-physics', 'organic-chemistry', 'inorganic-chemistry', 'geometry', 'algebra'],
+    },
+    { label: 'sexual', gloss: /\b(?:sexual(?:ly)?|sexually aroused|erection|erect penis|orgasm|genitals?|genitalia|penis|vagina|vulva|intercourse|ejaculat\w*|semen|copulat\w*|masturbat\w*|fornicat\w*)\b/i },
+  ],
   // No cap on senses per word (owner's request, 2026-09-27): common words list everyday informal meanings
   // late ("cool": fashionable is sense 9 of 13), and learners should see all of them.
   // One short example per sense helps tell meanings apart; more would add a lot to a language this size.
