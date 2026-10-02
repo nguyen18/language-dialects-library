@@ -12,7 +12,7 @@
 // the checks found anything, not that the text is correct.
 
 import { createDictionary, resolveRegion, type Dictionary } from './index.ts'
-import { accentCombinations, joined, matchCase, plain, segment, sentencesOf, syllablesByPlain, units, type Unit, type Word } from './text.ts'
+import { accentCombinations, joined, matchCase, plain, segment, sentencesOf, spellingCandidates, syllablesByPlain, units, type Unit, type Word } from './text.ts'
 import { markLanguages } from './detect.ts'
 import { createTranslator, type Translator, type TranslatorOptions } from './translate.ts'
 import {
@@ -155,8 +155,15 @@ const unique = <T>(items: T[]) => [...new Set(items)]
 //   because filled-in sentence frames add accented words), any accented form that's more common
 //   counts ("an" → "ăn"; but not "con" → "còn", about as common). Left alone: capitalized words
 //   mid-sentence (names) and the language's listed pronouns, some written without accents ("tui").
-// First, a doubtful syllable (one of the above) is tried with its neighbors: when fixing its accents makes a
-// dictionary word with them, that word is suggested for the run ("hom nay" → "hôm nay", not "hôm này").
+// - a syllable that isn't in the language may also be a letter typo: one letter missing, extra, wrong or two
+//   swapped ("khôg", "khôngg" → "không"; "họk" → "học"), with any accents (spellingCandidates). Plain-letter
+//   ones count only when a one-letter fix gives a common syllable ("tihch" → "thích"); real syllables are
+//   never letter-changed, so correct words stay.
+// Not checked: abbreviations and names with a capital after the first letter ("GĐ", "TKiều"), and words
+// with letters the language's syllables don't use (Chinese characters in Vietnamese text).
+// First, a doubtful syllable (one of the above) is tried with its neighbors: when fixing its accents (or a
+// letter) makes a dictionary word with them, that word is suggested for the run ("hom nay" → "hôm nay", not
+// "hôm này"; "cảm ơm" → "cảm ơn", not "cảm ôm").
 // Units inside a known word, or in the learner's own language, aren't checked.
 // Zipf points by which an accented form must be more common than a plain-letter word to be suggested.
 const ACCENTS_GAP = 1.5
@@ -174,6 +181,11 @@ const PLAIN_RUN_MARGIN = 0.5
 // "tháng sáu", June). A run with no accents at all ("nha bang") was probably typed without them, so any of
 // its syllables may change ("nhà băng", bank), still only when one word clearly wins.
 const PLAIN_RUN_MAX_ZIPF = 5
+// A plain-letter non-syllable with no accented form is checked as a typo only if a one-letter fix gives a
+// syllable at least this common (Zipf); otherwise it's probably a name or a foreign word.
+const PLAIN_TYPO_MIN_ZIPF = 4
+// Candidates kept per misspelled syllable.
+const SPELLING_CANDIDATES = 3
 
 async function spelling(ctx: Context): Promise<CheckIssue[]> {
   if (ctx.config.units !== 'syllables' || !ctx.meta.syllables) return []
@@ -184,6 +196,10 @@ async function spelling(ctx: Context): Promise<CheckIssue[]> {
     issues.push({ rule: 'spelling', severity, start: u.start, end: u.end, text: u.text, message, suggestions: candidates.map((c) => matchCase(u.text, c)) })
   const options = (u: Unit, candidates: string[]) => listOf(candidates.map((c) => quote(matchCase(u.text, c))), 'or')
   const pronouns = new Set(Object.values(ctx.config.pronouns ?? {}).flat().map((w) => w.toLowerCase()))
+  // The language's letters (without accents), from its syllables: words using others aren't its own.
+  const alphabet = new Set([...byPlain.keys()].join(''))
+  const ownLetters = (u: Unit) => [...plain(u.text.toLowerCase()).replace(/[’']/g, '')].every((c) => alphabet.has(c))
+  const abbreviation = (u: Unit) => /\p{Lu}/u.test(u.text.slice(1))
 
   for (const sentence of ctx.sentences) {
     const lone = sentence.words.filter((w) => !w.entries.length || w.units.length === 1).flatMap((w) => w.units).filter((u) => !ctx.inBase(u))
@@ -194,13 +210,35 @@ async function spelling(ctx: Context): Promise<CheckIssue[]> {
     const inWord = (u: Unit) => sentence.words.some((w) => w.entries.length && w.units.length > 1 && w.units.includes(u))
     // What each lone unit is: not a syllable of the language (with forms it could be), or a plain-letter
     // syllable that could be missing its accents.
-    const checked = lone.filter((u) => !/\d/.test(lowerOf(u)) && !inWord(u))
-    const unknown = new Set(checked.filter((u) => !(lowerOf(u) in syllables) && ((byPlain.get(plain(lowerOf(u))) ?? []).length || !isPlain(u))))
+    const checked = lone.filter((u) => !/\d/.test(lowerOf(u)) && !inWord(u) && !abbreviation(u) && ownLetters(u))
+    const name = (u: Unit) => u !== sentence.units[0] && /\p{Lu}/u.test(u.text.charAt(0))
+    // Each non-syllable's candidates: accents and one-letter changes, the writer's own accents first.
+    const candidatesOf = new Map<Unit, string[]>()
+    const similar = ctx.config.similarLetters ?? []
+    const candidates = (u: Unit, limit = SPELLING_CANDIDATES) =>
+      spellingCandidates(lowerOf(u), syllables, byPlain, { limit, similar }).map((c) => c.word)
+    // For words with neighbors, only the best-ranked candidates: "muốm ăn" mustn't become "muối ăn" (salt)
+    // through a worse fix of "muốm" than "muốn" just because "muối ăn" is a dictionary word.
+    const bestCandidates = (u: Unit, limit: number) => {
+      const all = spellingCandidates(lowerOf(u), syllables, byPlain, { limit: 50, similar })
+      return all.filter((c) => c.marks === all[0]?.marks && c.edits === all[0]?.edits).slice(0, limit).map((c) => c.word)
+    }
+    const unknown = new Set(checked.filter((u) => {
+      const lower = lowerOf(u)
+      if (lower in syllables) return false
+      if ((byPlain.get(plain(lower)) ?? []).length || !isPlain(u)) return true
+      // Plain letters, no accented form: a typo only if a one-letter fix is a common syllable, and not a name.
+      if (name(u)) return false
+      const best = spellingCandidates(lower, syllables, byPlain, { limit: 1, minZipf: PLAIN_TYPO_MIN_ZIPF, similar })[0]
+      return Boolean(best)
+    }))
+    for (const u of unknown) candidatesOf.set(u, candidates(u))
     const plainWords = new Set(checked.filter((u) => {
       const lower = lowerOf(u)
       return lower in syllables && lower === plain(lower) && !pronouns.has(lower) && (u === sentence.units[0] || !/\p{Lu}/u.test(u.text.charAt(0)))
     }))
-    const missingAccents = [...unknown].some(isPlain)
+    // Only accent slips count here ("khong"), not letter typos ("tihch").
+    const missingAccents = [...unknown].some((u) => isPlain(u) && (byPlain.get(lowerOf(u)) ?? []).length > 0)
     // Typed without accents: mostly plain letters, and an accent error already, or 3+ words with no accent at all.
     const unaccented = mostlyPlain && (missingAccents || (target.length >= 3 && target.every(isPlain)))
     const gap = unaccented ? ACCENTS_GAP_UNACCENTED_TEXT : ACCENTS_GAP
@@ -231,6 +269,8 @@ async function spelling(ctx: Context): Promise<CheckIssue[]> {
         const written = span.map(lowerOf)
         const combos = accentCombinations(written, byPlain, {
           fixed: span.map((u) => !mayChange(u)),
+          // Misspelled syllables may change letters too ("cảm ơm" → "cảm ơn").
+          forms: span.map((u) => (unknown.has(u) ? bestCandidates(u, COMPOUND_FORMS_PER_SYLLABLE) : undefined)),
           perUnit: COMPOUND_FORMS_PER_SYLLABLE,
           max: COMPOUND_MAX_COMBINATIONS,
         }).filter((c) => c !== written.join(' '))
@@ -260,11 +300,11 @@ async function spelling(ctx: Context): Promise<CheckIssue[]> {
       if (covered.has(u)) continue
       const lower = lowerOf(u)
       if (unknown.has(u)) {
-        const candidates = (byPlain.get(plain(lower)) ?? []).slice(0, 3)
+        const found = candidatesOf.get(u) ?? []
         const accented = !isPlain(u)
         // Missing accents on plain letters is the common learner slip; a wrong accent is more surely wrong.
-        suggest(u, candidates, accented ? 'error' : 'warning', candidates.length
-          ? `${quote(u.text)} isn't a ${ctx.meta.name} syllable. Did you mean ${options(u, candidates)}?`
+        suggest(u, found, accented ? 'error' : 'warning', found.length
+          ? `${quote(u.text)} isn't a ${ctx.meta.name} syllable. Did you mean ${options(u, found)}?`
           : `${quote(u.text)} isn't a ${ctx.meta.name} syllable. Check the spelling and accents.`)
       } else if (plainWords.has(u)) {
         const better = betterForms(u)

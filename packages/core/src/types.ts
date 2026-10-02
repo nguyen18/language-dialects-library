@@ -178,6 +178,11 @@ export type CheckerConfig = {
    * leaving them out rather than translating them: Vietnamese has no articles ("the", "a", "an").
    */
   leaveOut?: string[]
+  /**
+   * Groups of letters often confused, by sound or by neighboring keys ("ckq": Vietnamese c, k and q sound
+   * alike). The spellchecker counts swapping within a group as half a change, so "họk" → "học" before "họ".
+   */
+  similarLetters?: string[]
 }
 
 /**
