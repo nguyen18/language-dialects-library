@@ -217,6 +217,14 @@ describe('checker (real Vietnamese data)', { skip: !built && 'build en and vi da
     assert.deepEqual(await fixes('Hom nay toi di cho.'), ['Hom nay→Hôm nay', 'toi→tôi', 'di→đi'])
     assert.deepEqual(await fixes('Chung toi se di Ha Noi.'), ['Chung toi→Chúng tôi', 'se→sẽ', 'di→đi'])
     assert.deepEqual(await fixes('Toi an com voi ma.'), ['Toi→Tôi', 'an com→ăn cơm', 'voi→với', 'ma→mà'])
+    // Real but rarer words written without accents that make a word together: "sam" is a word, "mua sắm" the
+    // one meant ("shopping"), even in accented text.
+    assert.deepEqual(await fixes('Hôm nay tôi đi mua sam.'), ['mua sam→mua sắm'])
+    assert.deepEqual(await fixes('Tôi đi nha sach.'), ['nha sach→nhà sách'])
+    // Common words written without accents stay ("cho con" isn't "chó con"), and so do runs that could be
+    // two words equally ("ban an": bản án or bàn ăn).
+    assert.deepEqual(await fixes('Mẹ cho con đi chơi.'), [])
+    assert.deepEqual(await fixes('Ban an ở đâu?'), [])
   })
 
   it('splits text into words, and finds other accents of a word', async () => {

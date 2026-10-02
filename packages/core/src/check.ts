@@ -165,6 +165,13 @@ const ACCENTS_GAP_UNACCENTED_TEXT = 0.2
 // combinations are looked up at most.
 const COMPOUND_FORMS_PER_SYLLABLE = 5
 const COMPOUND_MAX_COMBINATIONS = 64
+// When none of a run's syllables is doubtful on its own (all real words written without accents, "mua sam"),
+// its accented form is suggested only if one dictionary word clearly wins: ahead of the next by this many
+// Zipf points ("ban an" could be "bản án" or "bàn ăn", equally common, so it's left alone).
+const PLAIN_RUN_MARGIN = 0.5
+// And only syllables less common than this (Zipf) may change that way: common words written without
+// accents are usually meant ("tháng sau", next month, isn't "tháng sáu", June; "cho con" stays).
+const PLAIN_RUN_MAX_ZIPF = 5
 
 async function spelling(ctx: Context): Promise<CheckIssue[]> {
   if (ctx.config.units !== 'syllables' || !ctx.meta.syllables) return []
@@ -202,8 +209,11 @@ async function spelling(ctx: Context): Promise<CheckIssue[]> {
     const suspect = (u: Unit) => unknown.has(u) || (plainWords.has(u) && betterForms(u).length > 0)
 
     // First, runs of syllables with a doubtful one that make a word once their accents are fixed: "hom nay"
-    // → "hôm nay", "an com" → "ăn cơm", "hôm nây" → "hôm nay". Only the doubtful syllables change. The word
-    // decides between forms a syllable alone can't ("nay" alone could be này, nảy…).
+    // → "hôm nay", "an com" → "ăn cơm", "hôm nây" → "hôm nay". The word decides between forms a syllable
+    // alone can't ("nay" alone could be này, nảy…). Syllables written without accents may change too
+    // ("mua sam" → "mua sắm": "sam" is a word, but "mua sam" isn't, and "mua sắm" is); when none of them is
+    // doubtful on its own, only if one word clearly wins. Syllables written with accents never change
+    // unless they're doubtful.
     const covered = new Set<Unit>()
     const loneSet = new Set(checked)
     const maxUnits = ctx.config.maxWordUnits ?? 3
@@ -211,10 +221,13 @@ async function spelling(ctx: Context): Promise<CheckIssue[]> {
       for (let k = Math.min(maxUnits, sentence.units.length - i); k >= 2; k--) {
         const span = sentence.units.slice(i, i + k)
         if (span.some((u, j) => !loneSet.has(u) || covered.has(u) || (j > 0 && !joined(ctx.text, span[j - 1], u)))) continue
-        if (!span.some(suspect)) continue
+        const doubtful = span.some(suspect)
+        const rarePlain = (u: Unit) => plainWords.has(u) && (syllables[lowerOf(u)] ?? 0) < PLAIN_RUN_MAX_ZIPF
+        const mayChange = (u: Unit) => suspect(u) || rarePlain(u)
+        if (!doubtful && !span.some(rarePlain)) continue
         const written = span.map(lowerOf)
         const combos = accentCombinations(written, byPlain, {
-          fixed: span.map((u) => !suspect(u)),
+          fixed: span.map((u) => !mayChange(u)),
           perUnit: COMPOUND_FORMS_PER_SYLLABLE,
           max: COMPOUND_MAX_COMBINATIONS,
         }).filter((c) => c !== written.join(' '))
@@ -224,12 +237,13 @@ async function spelling(ctx: Context): Promise<CheckIssue[]> {
           .sort((a, b) => b.frequency - a.frequency)
           .slice(0, 3)
         if (!found.length) continue
+        if (!doubtful && found.length > 1 && found[0].frequency - found[1].frequency < PLAIN_RUN_MARGIN) continue
         const at = { start: span[0].start, end: span[k - 1].end, text: ctx.text.slice(span[0].start, span[k - 1].end) }
         const suggestions = found.map((f) => matchCase(at.text, f.word))
         const quoted = listOf(suggestions.map(quote), 'or')
         issues.push({
           rule: 'spelling', severity: 'warning', ...at, suggestions,
-          message: span.filter(suspect).every(isPlain)
+          message: span.filter(mayChange).every(isPlain)
             ? `${quote(at.text)} looks typed without accents. Did you mean ${quoted}?`
             : `${quote(at.text)} isn't spelled right. Did you mean ${quoted}?`,
         })
