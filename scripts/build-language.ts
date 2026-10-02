@@ -14,6 +14,7 @@ import { dirname, join } from 'node:path'
 import { createInterface } from 'node:readline'
 import { fileURLToPath } from 'node:url'
 import {
+  PERSONAL_NAME,
   PRONOUN_PERSONS,
   glossTerms,
   shardKey,
@@ -177,7 +178,6 @@ const PLACE_ENTRIES = new WeakMap<Entry, 'country' | 'place'>()
 // Names kept only as places (their part of speech is skipped otherwise): non-country ones are dropped
 // below placeNames.minZipf once frequencies are known.
 const PLACE_ONLY = new WeakSet<Entry>()
-const PERSONAL_NAME = /\b(?:given name|surname|family name|patronymic|nickname)\b/i
 
 function placeKind(raw: KaikkiEntry): 'country' | 'place' | null {
   const categories = (raw.senses ?? []).flatMap((s) => s.categories ?? []).filter((c) => typeof c === 'object')
