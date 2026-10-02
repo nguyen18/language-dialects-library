@@ -88,7 +88,7 @@ Every language's data defines its words in English, so English is the bridge bet
 
 **Hand-picked words** come before all of these for the meanings that have them (see below).
 
-Meanings are ordered by `meaning` (if given), then by being tagged for `fromRegion`, then the dictionary's own order, which lists main meanings first. That order is a guess when a word has several parts of speech: English *just* is listed as an adjective ("fair") before the adverb. Pass `pos` or `meaning` when you know which one you want.
+Meanings are ordered by `meaning` (if given), then by being tagged for `fromRegion`, then the dictionary's own order, which lists main meanings first. **Specialist and sexual meanings come last:** the English data labels later meanings `technical` (physics, chemistry, geometry… from Wiktionary's topics) or `sexual` (by definition, since Wiktionary seldom labels them), so "excited" lists *enthusiastic* and "to stir the emotions" before "in a state of higher energy", "having an erection" and "sexually aroused", for every target language. A word's first meaning is never labelled, so *gold* stays the metal and *circle* the shape (`senseLabels` in `languages/en.ts`). That order is a guess when a word has several parts of speech: English *just* is listed as an adjective ("fair") before the adverb. Pass `pos` or `meaning` when you know which one you want.
 
 ### Hand-picked words
 

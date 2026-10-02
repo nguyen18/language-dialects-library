@@ -288,6 +288,17 @@ describe('translator (real data)', { skip: !built && 'build en and vi data first
     assert.ok((await top('heo', { from: 'vi', fromRegion: 'Southern', to: 'en' })).includes('pig'))
   })
 
+  it('lists specialist and sexual meanings after everyday ones, and uses picks for "excited"', async () => {
+    const groups = await tr.translate('excited', { from: 'en', to: 'vi', allSenses: true })
+    assert.match(groups[0].source.glosses[0], /^Having great enthusiasm/)
+    assert.deepEqual(groups[0].translations.slice(0, 3).map((t) => t.word), ['hào hứng', 'háo hức', 'phấn khích'])
+    const labelled = groups.findIndex((g) => g.source.labels.some((l) => l === 'technical' || l === 'sexual'))
+    assert.ok(labelled > 0 && groups.slice(labelled).every((g) => g.source.labels.some((l) => l === 'technical' || l === 'sexual')))
+    // A word's main meaning stays first even when it's technical, and everyday tech meanings aren't moved.
+    assert.match((await tr.translate('gold', { from: 'en', to: 'vi', allSenses: true }))[0].source.glosses[0], /metal/)
+    assert.match((await tr.translate('release', { from: 'en', to: 'vi', allSenses: true }))[0].source.glosses[0], /software/)
+  })
+
   it('translates country names both ways', async () => {
     for (const [en, vi] of [['Japan', 'Nhật Bản'], ['France', 'Pháp'], ['Germany', 'Đức'], ['Thailand', 'Thái Lan'], ['India', 'Ấn Độ'], ['Vietnam', 'Việt Nam']]) {
       assert.equal((await top(en, { from: 'en', to: 'vi' }))[0], vi, en)

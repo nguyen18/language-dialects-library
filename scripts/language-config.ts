@@ -37,6 +37,14 @@ export type LanguageConfig = {
    * verbs "said" -> "say", but not regular noun plurals). Default: all.
    */
   formOfPos?: string[]
+  /**
+   * Labels to add to senses by Wiktionary topic or by definition, e.g. 'technical' for physics meanings and
+   * 'sexual' for sexual ones, which Wiktionary often leaves unlabelled. The translator lists senses with
+   * these labels after everyday ones (see LATER_LABELS in translate.ts). On English, the bridge, this
+   * orders meanings for every target language ("excited": enthusiastic first, then the rest). Never added
+   * to an entry's first sense, its main meaning ("gold" the metal, "circle" the shape).
+   */
+  senseLabels?: { label: string; topics?: string[]; gloss?: RegExp }[]
   /** Leave out senses with any of these labels (e.g. obsolete, archaic) to keep a large language small. */
   dropLabels?: string[]
   /** Leave out entries whose every sense is technical (has a Wiktionary topic, e.g. biology, law). */

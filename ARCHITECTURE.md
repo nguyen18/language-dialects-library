@@ -280,6 +280,17 @@ The owner found "nhat"/Nhật didn't translate to Japan. Audit: no country trans
 - Tests: country names both ways, *Nhật* offered for Japan, *hoàng bào*/*Vinh* not, *Hàn Quốc* → South Korea, variants of *nhat* / *nhat ban* (71 tests).
 - Not done (owner: "focus on the country translations"): nationality phrases, *món Nhật* "Japanese food". Noted in FUTURE_IMPROVEMENTS.md.
 
+## Specialist and sexual meanings last; "excited" picks (2026-10-02)
+
+The owner saw Language Helper's tip for "excited": *tích cực* (active, proactive) starred, and "Other meanings" listing "Having an erection" and "Sexually aroused" right after the physics meaning, ahead of the emotional verb "to stir the emotions".
+
+- **`LanguageConfig.senseLabels: { label, topics?, gloss? }[]`**: the build adds `label` to a sense whose Wiktionary `topics` include one listed, or whose gloss matches `gloss`. **Never an entry's first (kept) sense**: its main meaning, technical or not. Without that rule, 33 of the 3,000 most common English words changed first meaning, half for the worse (*gold* → a coin, *battery* → the legal term, *circle* lost the shape).
+- English: `technical` for physics, chemistry, electromagnetism, quantum-mechanics, nuclear-physics, organic/inorganic-chemistry, geometry, algebra. Broad fields are left out, because Kaikki adds each topic's parents: *release* "distribution of a software version" carries computing **and** mathematics, physical-sciences. `sexual` matches the definition (sexual(ly), erection, orgasm, genitals, penis, vagina, intercourse, ejaculat-, semen, copulat-, masturbat-, fornicat-), since Wiktionary seldom labels these ("excited": "Having an erection" and "Sexually aroused" have no tags or topics). 2,829 technical and 1,764 sexual senses.
+- **Translator** (`LATER_LABELS`): −2 relevance for a source sense with either label, after the marginal (−1) ones. English is the bridge, so this orders meanings for every target language.
+- Check: the first meaning of the 3,000 most common English words changes for 1 (*fired*, nonsense before and after). *excited*: enthusiastic, to stir the emotions, to arouse feelings, to energize an electromagnet, then higher energy (technical), erection, aroused (sexual), electron (technical). *release*: software first; orgasm and semen last.
+- **vi pick** `excited` (adj, "Having great enthusiasm…"): *hào hứng* (most common, Zipf 3.7; everyday "excited about"), *háo hức* (looking forward), *phấn khích* (thrilled), *hứng khởi*. The ranking had *tích cực* first: its definition shares "great energy, enthusiasm".
+- Labels are visible: Language Helper shows "technical"/"sexual" on those meanings.
+
 ## Pronoun table (added 2026-09-30)
 
 Vietnamese pronouns depend on the relationship (*con* = I, to a parent; *anh* = you, an older man), so the translator can't pick one from "I" alone (it ranked *tôi* 27th). The owner asked for a "who are you talking to? / you say I / you call them you" chart. Decided with the owner: store the **chart itself** keyed by relationship, not per-word tags, because pairs go together (*tao*/*mày*), some choices depend on the speaker's gender, and warnings belong to the situation.
